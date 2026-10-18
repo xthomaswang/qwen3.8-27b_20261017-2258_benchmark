@@ -1,75 +1,133 @@
 # Resume — current progress
 
-Updated: 2026-10-17 23:25 (local). Rewritten after every major phase. Read this first when
-picking the work back up.
+Updated: 2026-10-17 23:40 (local). The user paused work around 23:50; they were away
+on a poor network. Rewrite this after every major phase, and read it first when resuming.
 
-## Phase status
+## State at the pause
+
+- **Nothing is running.** No GPU lock is held, no server listens on 8700–8705, no
+  download runs, and every subagent has finished.
+- **No measurements yet.** Everything below comes from installs plus source and `--help`
+  reading. Nothing has been verified live.
 
 | # | Phase | Status |
 | --- | --- | --- |
-| 0 | Plan, repo scaffold, methodology | **done**. Repo public at github.com/xthomaswang/qwen3.8-27b_20261017-2258_benchmark |
-| 1 | Framework installs + flag research (parallel agents, no GPU) | **in progress** |
-| 2 | Harness + fixtures (mock-server tested) | **in progress** |
-| 3 | Gate G1–G5, per framework | pending |
-| 4 | Metrics M1–M7, per framework, one `bench/<framework>` PR each | pending |
-| 5 | Summary comparison PR + summary sent to the agent-benchmark session | pending |
+| 0 | Plan, repo scaffold, methodology | **done**. Public repo: github.com/xthomaswang/qwen3.8-27b_20261017-2258_benchmark |
+| 1 | Framework installs + flag research | **done** for all five. Details are in each `<framework>/env.md`, including its own "Status / remaining work" section. One gap: the oMLX native kernels are not built yet. |
+| 2 | Harness + fixtures | **partial**. Client layer done: OpenAI and Anthropic SSE, TTFT, usage/cached tokens, concurrency, memory sampler, provenance; 16 pytest tests pass. Fixtures, suites G1–G5 / M1–M7, and `summarize` are not built yet. See `harness/STATUS.md`. |
+| 3 | Gate G1–G5 per framework (live) | pending |
+| 4 | Metrics M1–M7 per framework, one `bench/<framework>` PR each, self-merged | pending |
+| 5 | Summary PR, plus a Chinese summary sent to the agent-benchmark session | pending |
 
-## Decisions so far
+## Frameworks: installs and expected gate results (from source; verify live)
 
-- **Model.** Qwen3.8-27B.
-  - The primary tier is 4-bit.
-  - The MLX stacks also get an 8-bit row, which is the checkpoint the agent benchmark uses.
-  - **Ordering changed:** the 8-bit rows run first, because they are the only checkpoint
-    already on disk.
-- **Large downloads are paused at the user's request.** The network measured ~0.5 MB/s
-  (HF 0.45 MB/s, Cloudflare 0.58 MB/s).
-  - Partial blobs are kept in the HF cache and resume later:
-    - unsloth GGUF: 512 MB of 16.5 GB
-    - DSpark head: started
-    - MLX 4-bit: not started
-  - Resume with `scripts/download_models.sh core gguf`; `extra` covers NVFP4 + BF16.
-- **Framework sources and venvs** live in `~/Developer/mlsys/serving/<framework>`, at the
-  user's request; this repo holds only the experiment.
+| Framework | Install (`~/Developer/mlsys/serving/…`) | G1 tools | G2 images | G3 `/v1/messages` | G4 thinking | G5 ≥64K | Concurrency | Spec decoding |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| llama.cpp | `llama.cpp`, b11717 (848bbda), Metal build in `build/bin` | pass (Qwen3-Coder XML parser) | pass (`--mmproj`) | pass; `thinking: adaptive` is ignored | pass | pass (~22 GiB at 64K, est.) | `-np 3 -kvu` | MTP: `-md mtp.gguf --spec-type draft-mtp` |
+| oMLX | `omlx_0.7`, v0.7.1rc1 (7a5a3d75); isolated `.bench-home`; **kernels not built** | pass; the call arrives as one delta at the end of the turn | pass (VLM path) | pass; streaming `tool_use` still to check | pass; `reasoning_effort` merged into template kwargs | pass (8 GiB KV at 131072) | continuous batching | none from local files: no MTP weights in 8-bit; no DFlash draft or Splash |
+| vLLM-Metal | `vllm-metal`, v0.31.0 (e7a0c90b); wheels kept in `.venv/wheels` | pass (verify) | likely pass (verify native multimodal path) | pass for text + tool_use; thinking defaults on (xhigh) | `enable_thinking` pass; `reasoning_effort` unmapped | pass (verify memory) | `--max-num-seqs` | **unsupported**: vllm-metal excludes hybrid GDN targets from spec decoding, and any spec config disables the prefix cache; record M3 spec-on as n/a |
+| lithos-metal | `lithos-metal`, v0.1.2 (46b2bc4c) | pass, only if no thinking fields are sent | **fail** (HTTP 400) | partial: text + tool_use; images and `adaptive` → 400 | **fail**: thinking hard-wired off | unknown (upstream tested ≤33K) | **429** on concurrent requests | DSpark; needs the 1.1 GB head |
+| mlx-lm | `mlx-lm`, v0.32.2 (93e6d4a6) | pass (`qwen3_coder` auto; whole call in one delta) | **fail** (HTTP 404 "Only 'text'") | **fail** (no route) | partial: `enable_thinking` works, `reasoning_effort` ignored | unknown (~4 GiB KV at 64K, est.) | — | none |
+| Core AI | not set up; reference only (no HTTP server) | — | — | — | — | — | — | — |
 
-  | Framework | Location | Version |
-  | --- | --- | --- |
-  | llama.cpp | `serving/llama.cpp` | b11717, commit 848bbda; built with Metal (`build/bin`) |
-  | oMLX | `serving/omlx_0.7` | v0.7.1rc1, commit 7a5a3d75; isolated base path `.bench-home/` |
-  | lithos-metal | `serving/lithos-metal` | v0.1.2, commit 46b2bc4c |
-  | vLLM-Metal | `serving/vllm-metal` | v0.31.0, commit e7a0c90b |
-  | mlx-lm | `serving/mlx-lm` | v0.32.2, commit 93e6d4a6 |
+Notes:
+- **lithos-metal checkpoint loading.** lithos-metal rejects MLX checkpoints that name the
+  head `language_model.lm_head.*`; the 8-bit uses that name. One local rename or patch
+  makes all 498 tensors load (see `lithos-metal/env.md`).
+- **lithos-metal with the official 4-bit.** Whether the official mlx-community 4-bit
+  shares that naming is unverified. Check its `model.safetensors.index.json`; the fetch
+  timed out on the bad network.
 
-  `serving/omlx` (0.3.9) belongs to the agent-benchmark session and is never touched.
-- **Core AI is reference only.** It has no HTTP server, and its BF16 source download is
-  paused.
+## Checkpoints and downloads
 
-## Coordination rules (agent-benchmark session "Meta Muse 本地替代方案")
+- **On disk.** Only `mlx-community/Qwen3.8-27B-8bit` (28 GB) is complete. It has a vision
+  tower and no MTP tensors.
+- **Downloads are paused** at the user's request: the network measured ~0.5 MB/s. The
+  partial blobs stay in the HF cache:
+  - unsloth GGUF: 512 MB of 18.8 GB
+  - DSpark head: just started
+  - MLX 4-bit: not started
+- **Resuming** is the user's call. When they say so, run `scripts/download_models.sh core gguf`.
+- **Fallbacks without downloads:**
+  - lithos-metal 4-bit: re-quantize the 8-bit locally, add the head rename, run
+    `--no-draft`.
+  - llama.cpp: a local conversion is a conditional go, but costly. It needs a custom
+    dequant script, a torch venv, ~126 GB of peak disk and 2–4 h of work, and the result
+    has no MTP head.
 
-- **Ports.** We use 8701 mlx-lm, 8702 llama-server, 8703 oMLX, 8704 lithos-metal,
-  8705 vLLM-Metal. Never 8500 or 8600–8699.
-- **GPU lock.** Timed segments hold `~/Developer/mlsys/experiments/.gpu-lock`, which
-  records the session name, purpose, start time and ETA. Before starting, check
-  `lsof -nP -iTCP:8500 -sTCP:LISTEN`; if anything is listening there, ask that session to
-  stop it. Delete the lock as soon as the segment ends.
-- **Never touch:** `~/.omlx`, `serving/omlx`, the `mlsys` conda env, the
-  `models/hf` links, existing HF cache entries, or `experiments/personal-agent-bench`.
-- **Git hygiene.**
-  - Repo files are in English.
-  - Commit messages carry no co-author trailer.
-  - Never commit real agent traces or real screenshots (`fixtures/real/` is gitignored).
+## Decisions (user)
 
-## Open questions for the user
+- I may merge the per-framework PRs myself.
+- Large downloads wait until the user is back on a good network.
+- Framework sources live in `serving/`. This repo holds only the experiment.
+- All repo files are in English.
+- `resume.md` is updated after each phase.
+- Independent work goes to parallel subagents.
+- The 8-bit rows run first: oMLX → vLLM-Metal → mlx-lm.
 
-1. **Large downloads.** When may they resume? With no downloads at all:
-   - lithos-metal can only run off a locally re-quantized 8→4-bit checkpoint, and only
-     target-only, since the DSpark head is 1.1 GB.
-   - llama.cpp needs either the 16.5 GB GGUF or a local conversion chain.
-2. **Merging.** Should results PRs be merged by me, or left open for review?
+## Harness requirements found during framework research (implement before the first run)
 
-## Next steps
+- **mlx_lm.server**
+  - Omit `model` (or send `"default_model"`). Any other value reloads the model and drops the prompt cache.
+  - Never send `seed`.
+  - Reasoning comes back as `reasoning`.
+  - The M1 warm-up must end with a user message, or the prefix is not cached.
+- **lithos-metal**
+  - Strip `chat_template_kwargs`, any `reasoning_effort` other than `none`, and any Anthropic `thinking` other than `disabled`.
+  - Expect 429 under concurrency.
+  - Cached tokens appear only in the server log.
+- **llama-server**
+  - Always pass `--port`; the default is now 9931.
+  - Cached tokens are in `timings.cache_n` / `cached_tokens`, and need `include_usage`.
+- **oMLX**
+  - Export `OMLX_BASE_PATH`. Some code reads only the env var, not `--base-path`.
+  - Set the 131072 context per model through the admin API or `model_settings.json`.
+  - Build the kernels first: `xcodebuild -showComponent MetalToolchain`, then step 2 of `omlx/env.md`.
+- **vLLM-Metal**
+  - Pass `--gpu-memory-utilization 0.55`. With hybrid models the KV budget is committed at startup, and the default 0.92 means about 118 GB resident.
+  - Reasoning arrives as `reasoning`, so the TTFT check must accept both `reasoning` and `reasoning_content`.
+  - Launch command: `vllm-metal/env.md`.
+- **Qwen chat template.** The template puts the tools block before the system prompt, so the cold-run cache-busting nonce goes into the first tool's description.
+- **Sizes.** 64K means 64,000 tokens. A 1280×1024 screenshot is 1280 image tokens (1282 with the vision markers).
 
-1. Collect the agent reports: env.md drafts and the harness. Review them, then commit
-   the harness to main.
-2. Run the gate, then the metrics, with the 8-bit rows first: oMLX → vLLM-Metal → mlx-lm.
-   Each run is followed by a `bench/<framework>` PR.
-3. lithos-metal and llama.cpp follow once checkpoints are available.
+## Next steps (in order)
+
+1. **Finish the harness:** fixtures, suites, `summarize`. Resume from `harness/STATUS.md`. A subagent can do this, with no GPU needed.
+2. **Build the oMLX native kernels** (`omlx/env.md`, step 2).
+3. **Run the 8-bit gate and metrics.**
+   - Message the agent-benchmark session first, then take the GPU lock.
+   - Order: oMLX → vLLM-Metal → mlx-lm.
+   - Each framework gets a `bench/<framework>` PR, self-merged.
+4. **4-bit rows, lithos-metal, llama.cpp.** These need downloads (user's call), or the fallbacks above.
+5. **Core AI reference row.** Needs the BF16 download.
+6. **Summary.** Open the summary PR, and send the summary to the agent-benchmark session.
+
+## Shared with the other session
+
+Two Claude Code sessions work in ~/Developer/mlsys and share one GPU:
+- **agent-benchmark session** ("Meta Muse 本地替代方案"; resume: `~/Developer/mlsys/resume.md`) owns:
+  - `experiments/personal-agent-bench`
+  - `agent/`
+  - `serving/omlx` (oMLX 0.3.9) and `~/.omlx`
+  - `models/hf`
+  - ports 8500 and 8600-8699
+- **local_ai-benchmark session** (resume: `~/Developer/mlsys/experiments/qwen3.8-27b_20261017-2258_benchmark/resume.md`) owns:
+  - that repo
+  - `serving/{llama.cpp,omlx_0.7,lithos-metal,vllm-metal,mlx-lm}`
+  - `models/hf-bench`
+  - ports 8700-8705
+
+Rules for both sessions:
+- Neither session edits the other's files or stops the other's processes.
+- The HF cache (`~/Developer/ml_source/huggingface`) is add-only: no deletes, no moves. Both sessions use the same `mlx-community/Qwen3.8-27B-8bit` checkpoint read-only.
+- GPU lock (`~/Developer/mlsys/experiments/.gpu-lock`, containing holder, purpose, start time and ETA):
+  1. The side that is about to time creates the lock.
+  2. It checks `lsof -nP -iTCP:8500 -sTCP:LISTEN`. If oMLX is up on 8500, it asks the agent-benchmark session to stop it.
+  3. It deletes the lock when done.
+  - Nobody starts a model server or loads a model while the other side holds the lock.
+- Agent traces from the agent benchmark stay on this machine. They are never committed to the public serving-benchmark repo.
+
+State at the 2026-10-17 23:50 pause:
+- No lock is held, and nothing listens on 8500 or 8700-8705.
+- After resuming, local_ai-benchmark messages the agent-benchmark session before its first lock.
+- Whether the agent benchmark switches from 8-bit to 4-bit is the user's call, made after the serving results come in.

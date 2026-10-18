@@ -24,3 +24,7 @@ fixtures/real/
 *.key
 
 .DS_Store
+
+# Generated binary/large fixtures (rebuild with `agentbench fixtures build`)
+fixtures/generated/
+.pytest_cache/
