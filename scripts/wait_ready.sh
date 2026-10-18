@@ -36,6 +36,10 @@ except Exception:
 STATUS='no answer yet'
 probe() {
   local ids
+  if [ "$FW" = mlc-llm ]; then   # MLC serves no /health; /v1/models answers once the engine is up
+    get /v1/models
+    case "$CODE" in 200) ids=$(model_ids); STATUS="models: ${ids:-?}"; return 0 ;; 000) STATUS='connection refused (not listening yet)'; return 1 ;; *) STATUS="/v1/models $CODE"; return 1 ;; esac
+  fi
   get /health
   case "$CODE" in
     200) ;;

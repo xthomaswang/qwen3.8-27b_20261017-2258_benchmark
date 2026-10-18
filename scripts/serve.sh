@@ -13,6 +13,7 @@
 #   omlx          spec-off  (spec-on: stub)  8bit 4bit    8703
 #   lithos-metal  dspark no-draft            4bit nvfp4   8704
 #   vllm-metal    spec-off  (spec-on: stub)  8bit 4bit    8705
+#   mlc-llm       server think               4bit         8700  (q4f16_1 source build; text only)
 #
 # --dry-run runs every check and prints the exact command; it writes and starts nothing.
 # A real run also needs our GPU lock (scripts/gpu_lock.sh acquire), port 8500 free and no
@@ -255,6 +256,28 @@ build_lithos() {
   [ "$VARIANT" = dspark ] || NOTES+=("--no-draft also drops the tuned recipes: spec-off means generic kernels here (env.md section 6)")
 }
 
+build_mlc() {
+  case "$TIER" in 4bit) ;; *) bad_tier "4bit (q4f16_1)" ;; esac
+  local exe m lib; exe=$(fw_exe mlc-llm)
+  WORKDIR="$SERVING/mlc-llm_bench"
+  m="$MLSYS/models/mlc/Qwen3.8-27B-q4f16_1-MLC"
+  case "$VARIANT" in server) ;; think) m="$m-think" ;; *) bad_variant "server think" ;; esac
+  lib="$MLSYS/models/mlc/Qwen3.8-27B-q4f16_1-MLC/Qwen3.8-27B-q4f16_1-ctx131072-bs1-metal.dylib"
+  need_exe "$exe"
+  if [ -f "$m/mlc-chat-config.json" ]; then ok "model dir $(tilde "$m")"; else need "missing MLC model dir $m (mlc-llm/env.md section 4)"; fi
+  if [ -f "$lib" ]; then ok "model lib $(tilde "$lib")"; else need "missing model lib $lib"; fi
+  ENVV+=(PYTHONUNBUFFERED=1)
+  # Hybrid GDN state: no prefix cache, no packed multi-sequence prefill (mlc-llm/env.md section 6).
+  CMD=("$exe" -m mlc_llm serve "$m" --model-lib "$lib" --device metal --mode interactive
+       --prefix-cache-mode disable
+       --overrides "context_window_size=131072;max_total_seq_length=131072;prefill_chunk_size=2048"
+       --enable-debug --host 127.0.0.1 --port "$PORT")
+  MODEL_ID="$m"
+  PROV+=("$(git -C "$WORKDIR" rev-parse --short HEAD 2>/dev/null | sed 's/^/mlc-llm /') tvm $(git -C "$WORKDIR/3rdparty/tvm" rev-parse --short HEAD 2>/dev/null)")
+  NOTES+=("tool calls only via structured output: run the harness with --profile mlc --extra-body '{\"debug_config\": {\"grammar_execution_mode\": \"constraint\"}}'")
+  NOTES+=("thinking is fixed by the model dir: variant server = off, think = on (no per-request switch)")
+}
+
 say "== serve.sh $FW $VARIANT $TIER$( [ "$DRY" -eq 1 ] && printf '  (dry run)' )"
 say "checks:"
 case "$FW" in
@@ -263,6 +286,7 @@ case "$FW" in
   omlx) build_omlx ;;
   vllm-metal) build_vllm ;;
   lithos-metal) build_lithos ;;
+  mlc-llm) build_mlc ;;
 esac
 ENVV=(HF_HUB_OFFLINE=1 HF_HOME="$HF_HOME" ${ENVV[@]+"${ENVV[@]}"})
 
@@ -273,7 +297,7 @@ elif lock_exists; then refuse "the GPU lock is held by the other side ($GPU_LOCK
 else refuse "GPU lock not held (scripts/gpu_lock.sh acquire <purpose> <eta-minutes>)"; fi
 if [ -n "$(listen_pids "$PEER_PORT")" ]; then refuse "port 8500 is up — ask the agent-benchmark session to stop it"; else ok "port 8500 free"; fi
 UP=$(our_listeners)
-if [ -n "$UP" ]; then refuse "a server already listens (port pid): $(echo $UP)"; else ok "ports 8701-8705 free"; fi
+if [ -n "$UP" ]; then refuse "a server already listens (port pid): $(echo $UP)"; else ok "ports 8700-8705 free"; fi
 PIDF=$(pidfile_of "$FW")
 if [ -f "$PIDF" ] && pid_alive "$(head -1 "$PIDF")"; then refuse "${PIDF#"$BENCH_DIR"/}: PID $(head -1 "$PIDF") is still running"; fi
 
