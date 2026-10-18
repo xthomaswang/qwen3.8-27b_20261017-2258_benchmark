@@ -42,9 +42,13 @@ def test_each_suite_quick_end_to_end(built, generic, tmp_path, suite):
     assert summary["type"] == "summary" and summary["suite"] == suite
     if suite == "gate":
         assert {k: v["result"] for k, v in summary["items"].items()} == {
-            "G1": "PASS", "G2": "PASS", "G3": "PASS", "G4": "PASS", "G5": "INFO"}
+            "G1": "PASS", "G2": "PASS", "G2b": "PASS", "G3": "PASS", "G4": "PASS", "G5": "INFO"}
         cap = (tmp_path / "omlx" / "capabilities.md").read_text()
-        assert "<!-- agentbench:begin gate t -->" in cap and "| G2 |" in cap
+        assert "<!-- agentbench:begin gate t -->" in cap and "| G2 |" in cap and "| G2b |" in cap
+        probes = {x["probe"]: x for x in summary["probes"]}
+        assert probes["G2b.tool-image"]["ok"] and probes["G3.tool_result-image"]["ok"]
+        g2b = [r for r in reqs if r.get("probe", "").startswith("G2b.")]
+        assert len(g2b) == 2 and {r["prompt"]["n_images"] for r in g2b} == {1}
         assert files[0].with_suffix(".md").exists()
     if suite == "m1":
         warm = [r["metrics"] for r in reqs if r["phase"] == "warm"]
@@ -203,3 +207,20 @@ def test_preflight_failure_routes_to_unverified(built, generic, tmp_path):
     assert main(["m2"] + cli_args(srv.url, root, tmp_path, "omlx", "omlx", "--preflight-cmd", str(ok))) == 0
     h = read(next((tmp_path / "omlx" / "raw").glob("m2-*.jsonl")))[0]
     assert not h["unverified"] and h["preflight"]["exit_code"] == 0
+
+
+def test_gate_g2b_flags_images_dropped_from_tool_messages(built, tmp_path):
+    """The omlx mock drops image_url parts of role=tool messages, as stock oMLX 0.7.1rc1 does."""
+    root, _ = built
+    srv, _ = start_mock(root, "omlx")
+    try:
+        assert main(["gate"] + cli_args(srv.url, root, tmp_path, "omlx", "omlx")) == 0
+    finally:
+        srv.stop()
+    summary = read(next((tmp_path / "omlx" / "raw").glob("gate-*.jsonl")))[-1]
+    g2b = summary["items"]["G2b"]
+    assert g2b["result"] == "FAIL" and g2b["dropped"] and "image dropped" in g2b["detail"], g2b
+    assert summary["items"]["G2"]["result"] == "PASS"
+    probes = {x["probe"]: x for x in summary["probes"]}
+    assert probes["G2b.user-control"]["ok"] and not probes["G2b.tool-image"]["ok"]
+    assert probes["G3.tool_result-image"]["ok"] and probes["G3.tool_result-control"]["ok"]

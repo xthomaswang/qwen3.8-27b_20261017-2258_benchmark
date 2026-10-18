@@ -1,4 +1,4 @@
-"""Gate G1-G5 (METHODOLOGY section 1), with Hermes-style and Claude Code-style requests.
+"""Gate G1-G5 plus G2b (METHODOLOGY section 1), with Hermes-style and Claude Code-style requests.
 
 Hermes-style (OpenAI API): every request carries top-level `reasoning_effort` ("none"
 when thinking is off) and `chat_template_kwargs.enable_thinking`. Claude Code-style
@@ -23,13 +23,19 @@ from ..fixtures.store import new_digits
 
 REQ = {"G1": "OpenAI chat completions + SSE + Qwen3.8 tool calls",
        "G2": "Image input (base64 PNG image_url), code read back",
-       "G3": "Anthropic /v1/messages: text, tool_use, image",
+       "G2b": "Image inside a tool result (role=tool image_url, Hermes path), code read back",
+       "G3": "Anthropic /v1/messages: text, tool_use, image, image in tool_result",
        "G4": "Thinking control (enable_thinking / reasoning_effort)",
        "G5": "Context >= 64K: a 64,000-token prompt completes"}
 
 HERMES_OFF = {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}}
 HERMES_ON = {"reasoning_effort": "medium", "chat_template_kwargs": {"enable_thinking": True}}
 MATH = "What is 17 multiplied by 23? Reply with the number only."
+SHOT_ASK = ("Take a screenshot with the computer_screenshot tool. The screen shows a dialog with a verification "
+            "code. Reply with the verification code exactly as it is shown, and nothing else.")
+SHOT_OK = "Screenshot captured (1280x1024)."
+SHOT_ID = "call_g2b_screenshot"
+DROP_TOKENS = 600  # an image is ~1.3K prompt tokens; a smaller gap is noise
 
 
 def _alnum(s: str) -> str:
@@ -178,6 +184,60 @@ class Gate:
         rejected = bool(o.rec.error and o.rec.error.get("type") == "http" and (o.rec.http_status or 0) >= 400)
         self.item("G2", "PASS" if ok else "FAIL", what, rejected=rejected)
 
+    # ------------------------------------------------------------------- G2b
+    def shot_tools(self, api: str = "openai") -> list[dict[str, Any]]:
+        key = (lambda t: t["name"]) if api == "anthropic" else (lambda t: t["function"]["name"])
+        return [t for t in self.fx.tools(api=api) if key(t) == "computer_screenshot"]
+
+    def g2b_messages(self, in_tool: bool) -> list[dict[str, Any]]:
+        """Screenshot returned by a tool: in the role=tool message itself (what Hermes sends once
+        `supports_vision` is set), or, as a control, in a following user message."""
+        img = self.fx.gate["g2"]["image"]
+        call = {"id": SHOT_ID, "type": "function", "function": {"name": "computer_screenshot", "arguments": "{}"}}
+        # a fresh nonce first, so neither request reuses the other's prefix and prompt_tokens compare cleanly
+        msgs: list[dict[str, Any]] = [{"role": "user", "content": f"[run {new_digits()}] {SHOT_ASK}"},
+                                      {"role": "assistant", "content": "I'll take a screenshot.", "tool_calls": [call]}]
+        if in_tool:
+            msgs.append({"role": "tool", "tool_call_id": SHOT_ID,
+                         "content": [{"type": "text", "text": SHOT_OK}, {"type": "image_ref", "image": img}]})
+        else:
+            msgs += [{"role": "tool", "tool_call_id": SHOT_ID, "content": SHOT_OK + " It is attached below."},
+                     self.fx.screenshot_message(img, "Here is the screenshot.")]
+        return self.fx.resolve(msgs, text_only=False)
+
+    def read_code(self, o: Outcome) -> tuple[bool, str]:
+        code = self.fx.manifest["g2_code"]
+        if not o.rec.ok:
+            return False, "rejected: " + self.err(o)
+        ans = o.rec.content.strip()
+        if _alnum(code) in _alnum(ans):
+            return True, f"read {code}"
+        calls = [c.get("name") for c in o.rec.tool_calls]
+        return False, (f"code not read (answer {ans[:40]!r}" + (f", tool calls {calls}" if calls else "") + f", expected {code})")
+
+    @staticmethod
+    def drop_note(pt: int | None, pt_ctrl: int | None) -> tuple[bool, str]:
+        if pt is None or pt_ctrl is None:
+            return False, ""
+        gap = pt_ctrl - pt
+        return gap > DROP_TOKENS, (f"; image dropped: {gap} fewer prompt tokens than the control" if gap > DROP_TOKENS else "")
+
+    async def g2b(self) -> None:
+        tools = self.shot_tools()
+        o = await self.t.chat(self.g2b_messages(True), tools=tools, max_tokens=64, raw_fields=HERMES_OFF, count_local=True)
+        c = await self.t.chat(self.g2b_messages(False), tools=tools, max_tokens=64, raw_fields=HERMES_OFF, count_local=True)
+        ok, what = self.read_code(o)
+        cok, cwhat = self.read_code(c)
+        dropped, note = self.drop_note(o.rec.prompt_tokens, c.rec.prompt_tokens)
+        what += f"; prompt_tokens={o.rec.prompt_tokens}" + note
+        cwhat += f"; prompt_tokens={c.rec.prompt_tokens}"
+        self.record("G2b.tool-image", "Hermes, screenshot as image_url inside the role=tool message", o, what, ok)
+        self.record("G2b.user-control", "Hermes, same screenshot in a following user message (control)", c, cwhat, cok)
+        sub = [{"probe": "G2b.tool-image", "ok": ok, "outcome": what},
+               {"probe": "G2b.user-control", "ok": cok, "outcome": cwhat}]
+        detail = f"tool-message image: {what}; control (user message): {cwhat}"
+        self.item("G2b", "PASS" if ok else "FAIL", detail, sub, dropped=dropped)
+
     # -------------------------------------------------------------------- G3
     def cc_body(self, messages: list[dict[str, Any]], system: str, tools: list | None = None,
                 thinking: str | None = None, max_tokens: int = 4096) -> dict[str, Any]:
@@ -237,7 +297,32 @@ class Gate:
         what = (f"read {code}" if img_ok else (self.err(o) if not o.rec.ok else f"code not read ({o.rec.content[:40]!r})"))
         self.record("G3.image", "Claude Code, image block (base64)", o, what, img_ok)
         sub.append({"probe": "G3.image", "ok": img_ok, "outcome": what})
-        parts = [("text", text_ok), ("tool_use", tool_ok), ("image", img_ok)]
+        # screenshot returned by a tool: image block inside tool_result (Claude Code MCP), and a control
+        img_block = fx.resolve_content([{"type": "image_ref", "image": fx.gate["g2"]["image"]}], text_only=False,
+                                       api="anthropic")
+        def ask() -> dict[str, Any]:  # fresh nonce per request (see g2b_messages)
+            return {"role": "user", "content": [{"type": "text", "text": f"[run {new_digits()}] {SHOT_ASK}"}]}
+        use = {"role": "assistant", "content": [{"type": "text", "text": "I'll take a screenshot."},
+                                                {"type": "tool_use", "id": "toolu_g3_screenshot",
+                                                 "name": "computer_screenshot", "input": {}}]}
+        in_result = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_g3_screenshot",
+                                                  "content": img_block + [{"type": "text", "text": SHOT_OK}]}]}
+        control = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_g3_screenshot",
+                                                "content": SHOT_OK + " It is attached below."}]
+                   + img_block + [{"type": "text", "text": "Here is the screenshot."}]}
+        tools = self.shot_tools("anthropic")
+        o = await self.t.anthropic(self.cc_body([ask(), use, in_result], "You are a helpful assistant.", tools=tools))
+        c = await self.t.anthropic(self.cc_body([ask(), use, control], "You are a helpful assistant.", tools=tools))
+        tr_ok, what = self.read_code(o)
+        cok, cwhat = self.read_code(c)
+        _, note = self.drop_note(o.rec.prompt_tokens, c.rec.prompt_tokens)
+        what += f"; input_tokens={o.rec.prompt_tokens}" + note
+        cwhat += f"; input_tokens={c.rec.prompt_tokens}"
+        self.record("G3.tool_result-image", "Claude Code, screenshot as image block inside tool_result", o, what, tr_ok)
+        self.record("G3.tool_result-control", "Claude Code, same image after the tool_result (control)", c, cwhat, cok)
+        sub.append({"probe": "G3.tool_result-image", "ok": tr_ok, "outcome": what})
+        sub.append({"probe": "G3.tool_result-control", "ok": cok, "outcome": cwhat})
+        parts = [("text", text_ok), ("tool_use", tool_ok), ("image", img_ok), ("tool_result image", tr_ok)]
         res = "PASS" if all(v for _, v in parts) else "FAIL"
         detail = ", ".join(f"{k} {'ok' if v else 'FAIL'}" for k, v in parts)
         first_fail = next((x["outcome"] for x in sub if x["ok"] is False), None)
@@ -343,7 +428,7 @@ class Gate:
     # ------------------------------------------------------------------ report
     def table(self) -> str:
         rows = ["| ID | Requirement | Result | Detail |", "| --- | --- | --- | --- |"]
-        for gid in ("G1", "G2", "G3", "G4", "G5"):
+        for gid in ("G1", "G2", "G2b", "G3", "G4", "G5"):
             it = self.items.get(gid)
             if it:
                 rows.append(f"| {gid} | {it['requirement']} | **{it['result']}** | {_md(it['detail'])} |")
@@ -364,7 +449,7 @@ class Gate:
         tcm = ("; tool calls via **structured output** (`response_format` "
                f"`{self.cfg.profile.structured_format}`, {self.cfg.profile.structured_union}; non-standard)"
                if self.cfg.profile.tool_call_mode == "structured_output" else "")
-        return (f"## Gate G1-G5, tag `{self.cfg.tag}`{mode}\n\n"
+        return (f"## Gate G1-G5 + G2b, tag `{self.cfg.tag}`{mode}\n\n"
                 f"Run {now}; profile `{self.cfg.profile.name}`; framework version `{self.cfg.framework_version or 'n/a'}`; "
                 f"harness `{commit}`{tcm}. Raw: `raw/{self.w.path.name}`.\n\n"
                 f"{self.table()}\n\n### Probes\n\n{self.probe_table()}\n")
@@ -400,7 +485,7 @@ async def run(cfg: RunConfig, target: Target, writer: Writer, opts: Any = None) 
     writer.write({"type": "health", "status": st, "body": js if not isinstance(js, str) else js[:300]})
     if st is None:
         raise RuntimeError(f"server at {cfg.base_url} is not reachable: {js}")
-    for step in (g.g1, g.g2, g.g3, g.g4, g.g5):
+    for step in (g.g1, g.g2, g.g2b, g.g3, g.g4, g.g5):
         await step()
     frag = g.fragment()
     md = writer.path.with_suffix(".md")

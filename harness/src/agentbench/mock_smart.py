@@ -28,6 +28,7 @@ class Behavior:
     name: str = "generic"
     reasoning_field: str = "reasoning_content"  # reasoning_content | reasoning | inline
     images: bool = True
+    tool_images: bool = True  # stock oMLX 0.7.1rc1 drops image_url parts of role=tool messages (OpenAI API)
     image_reject_status: int = 400
     image_reject_message: str = "image input is not supported"
     anthropic: bool = True
@@ -52,7 +53,7 @@ class Behavior:
 BEHAVIORS: dict[str, Behavior] = {
     "generic": Behavior(),
     "llamacpp": Behavior(name="llamacpp", cached_report="timings"),
-    "omlx": Behavior(name="omlx", effort_mode="alias", tool_call_style="single"),
+    "omlx": Behavior(name="omlx", effort_mode="alias", tool_call_style="single", tool_images=False),
     "vllm": Behavior(name="vllm", reasoning_field="reasoning"),
     "lithos": Behavior(name="lithos", images=False, strict_fields=LITHOS_FIELDS, effort_mode="forbid", can_think=False,
                        default_thinking=False, anthropic_thinking_allowed=("disabled",), busy_429=True,
@@ -90,9 +91,31 @@ def _text_of(content: Any) -> str:
 
 
 def _n_images(content: Any) -> int:
+    """Image parts of a message content, including images nested in Anthropic tool_result blocks."""
     if not isinstance(content, list):
         return 0
-    return sum(1 for p in content if isinstance(p, dict) and p.get("type") in ("image_url", "image"))
+    n = 0
+    for p in content:
+        if isinstance(p, dict) and p.get("type") in ("image_url", "image"):
+            n += 1
+        elif isinstance(p, dict) and p.get("type") == "tool_result":
+            n += _n_images(p.get("content"))
+    return n
+
+
+def _drop_tool_images(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(m, content=[p for p in m["content"] if not (isinstance(p, dict) and p.get("type") == "image_url")])
+            if m.get("role") == "tool" and isinstance(m.get("content"), list) else m for m in msgs]
+
+
+def _turn_images(msgs: list[dict[str, Any]]) -> int:
+    """Images after the last assistant message: what the model is looking at now."""
+    last_asst = max((i for i, m in enumerate(msgs) if m.get("role") == "assistant"), default=-1)
+    return sum(_n_images(m.get("content")) for m in msgs[last_asst + 1:])
+
+
+def _user_text(msgs: list[dict[str, Any]]) -> str:
+    return " ".join(_text_of(m.get("content")) for m in msgs if m.get("role") == "user")
 
 
 def _strip_images(obj: Any) -> Any:
@@ -199,10 +222,14 @@ class SmartResponder:
         self.cache = (self.cache + [segs])[-64:]
         return total, min(best, max(total - 1, 0))
 
-    def _answer(self, last_user: Any, tools: bool, thinking: bool) -> Plan:
+    def _answer(self, last_user: Any, tools: bool, thinking: bool, images: int | None = None,
+                question: str | None = None) -> Plan:
+        """`images`/`question` (default: from `last_user`) let a screenshot that arrives in a tool
+        result answer a question asked earlier in the conversation (gate G2b)."""
         text = _text_of(last_user)
         plan = Plan(thinking=thinking)
-        if self.code and _n_images(last_user) and "verification code" in text.lower():
+        n_img = _n_images(last_user) if images is None else images
+        if self.code and n_img and "verification code" in (text if question is None else question).lower():
             plan.text = [self.code]
         elif tools and text in self.answers and self.answers[text]:
             plan.calls = self.answers[text]
@@ -263,6 +290,8 @@ class SmartResponder:
         msgs = body.get("messages") or []
         if not b.images and any(_n_images(m.get("content")) for m in msgs):
             return "json", b.image_reject_status, {"error": b.image_reject_message}
+        if not b.tool_images:
+            msgs = _drop_tool_images(msgs)
         kwargs = body.get("chat_template_kwargs") or {}
         effort = body.get("reasoning_effort")
         enable = kwargs.get("enable_thinking")
@@ -279,7 +308,8 @@ class SmartResponder:
                 if t_eff not in VALID_EFFORTS:
                     return "json", b.template_error_status, {"error": f"Unexpected reasoning effort {t_eff}."}
         last_user = next((m.get("content") for m in reversed(msgs) if m.get("role") == "user"), "")
-        plan = self._answer(last_user, bool(body.get("tools")) or structured_reply, thinking)
+        plan = self._answer(last_user, bool(body.get("tools")) or structured_reply, thinking,
+                            images=_turn_images(msgs), question=_user_text(msgs))
         if structured_reply:  # what a grammar-constrained server returns: one JSON step object as content
             if plan.calls:
                 steps = [{"tool": c["name"], "arguments": c["arguments"]} for c in plan.calls]
@@ -397,7 +427,7 @@ class SmartResponder:
                                                             "message": "Unsupported Messages content block: image"}}
         thinking = (th == "enabled") or (th in (None, "adaptive") and b.default_thinking and b.can_think)
         last_user = next((m.get("content") for m in reversed(msgs) if m.get("role") == "user"), "")
-        plan = self._answer(last_user, bool(body.get("tools")), thinking)
+        plan = self._answer(last_user, bool(body.get("tools")), thinking, question=_user_text(msgs))
         total, cached = self._prompt_cache([body.get("tools"), body.get("system")] + msgs)
         return "sse", self._anthropic_stream(plan, total, cached, body["max_tokens"])
 

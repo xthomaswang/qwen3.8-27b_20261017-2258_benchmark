@@ -63,3 +63,26 @@ def test_upsert_section(tmp_path):
 def test_summarize_all_runs_pools_files(run_dir):
     md = summarize(run_dir / "omlx", "t", all_runs=True)
     assert "### M1 cached-prefix TTFT" in md
+
+
+def test_cap_truncated_streams_count_as_latency_samples():
+    """oMLX ends a stream with `incomplete_tool_call` when the token cap cuts a tool call; its TTFT
+    and e2e are still complete measurements (llama.cpp reports the same case as finish=length)."""
+    from agentbench.summarize import cap_truncated, s_m4
+
+    def line(step, ok, err=None, ttft=1.0, e2e=2.0):
+        return {"type": "request", "phase": "start" if step == 0 else "step", "step": step, "run": 0,
+                "metrics": {"ok": ok, "error": err, "ttft_s": ttft, "e2e_s": e2e, "cached_tokens": 90 if ok else None,
+                            "prompt_tokens": 100 if ok else None, "prompt_tokens_local": 100}}
+
+    trunc = ("stream_error: {'message': 'Model output contains an unrecoverable tool call.', "
+             "'code': 'incomplete_tool_call'}")
+    lines = [line(0, True), line(1, False, trunc, ttft=1.5), line(2, True, ttft=2.0),
+             line(3, False, "HTTP 500: boom", ttft=None, e2e=None)]
+    assert cap_truncated(lines[1]["metrics"]) and not cap_truncated(lines[3]["metrics"])
+    md = s_m4([{"lines": lines + [{"type": "summary", "run_total_e2e_s": [6.0]}]}])
+    rows = {r.split("|")[1].strip().split()[0]: r.split("|") for r in md.splitlines() if r.startswith("| ") and r[2].isdigit()}
+    assert rows["1"][2].strip() == "1" and rows["1"][-2].strip() == "0"  # counted, not an error
+    assert rows["3"][2].strip() == "0" and rows["3"][-2].strip() == "1"  # a real error stays an error
+    assert "slope over steps 1-3: 0.5000 s/step" in md
+    assert "1 of 4 requests ended at the token cap" in md

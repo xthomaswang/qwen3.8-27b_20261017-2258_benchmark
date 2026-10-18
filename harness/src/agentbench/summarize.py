@@ -81,8 +81,28 @@ def table(head: list[str], rows: list[list[str]]) -> str:
                      + ["| " + " | ".join(r) + " |" for r in rows])
 
 
+CAP_TRUNCATED = ("incomplete_tool_call",)  # oMLX: the token cap cut a tool call; the stream ends with this error
+
+
+def cap_truncated(m: dict) -> bool:
+    """The stream produced tokens and ended at the token cap inside a tool call, which the server
+    flagged as a stream error. llama.cpp reports the same case as finish_reason=length."""
+    err = m.get("error") or ""
+    return (not m["ok"] and m.get("ttft_s") is not None and m.get("e2e_s") is not None
+            and any(c in err for c in CAP_TRUNCATED))
+
+
 def _ok(lines: list[dict]) -> list[dict]:
-    return [ln["metrics"] for ln in lines if ln["metrics"]["ok"]]
+    """Latency samples: successful requests plus cap-truncated streams (their TTFT and e2e are
+    complete measurements; they carry no usage, so no cached-token count)."""
+    return [ln["metrics"] for ln in lines if ln["metrics"]["ok"] or cap_truncated(ln["metrics"])]
+
+
+def truncation_note(lines: list[dict]) -> str:
+    n = sum(1 for ln in lines if cap_truncated(ln["metrics"]))
+    return (f"\n\n{n} of {len(lines)} requests ended at the token cap inside a tool call, and the server "
+            "flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no "
+            "usage chunk, so they report no cached tokens.") if n else ""
 
 
 # ------------------------------------------------------------------ suites
@@ -161,10 +181,15 @@ def s_m4(runs: list[dict]) -> str:
                      cell([m["e2e_s"] for m in ms]), med(cached), med(prompt), med(share, 2), str(len(sel) - len(ms))])
     summ = next((ln for r in runs for ln in r["lines"] if ln.get("type") == "summary"), {})
     tot = summ.get("run_total_e2e_s")
-    note = (f"\n\nTTFT slope over steps 1-{max(steps) if steps else 0}: {_f(summ.get('ttft_slope_s_per_step'), 4)} s/step; "
+    # slope recomputed from the request lines, so cap-truncated steps count (the suite's own value skips them)
+    from .suites.m4 import slope
+    meds = {k: mmm([m["ttft_s"] for m in _ok([x for x in ls if x["step"] == k])])["median"] for k in steps if k >= 1}
+    ks = [k for k in sorted(meds) if meds[k] is not None]
+    sl = slope([float(k) for k in ks], [meds[k] for k in ks])
+    note = (f"\n\nTTFT slope over steps 1-{max(steps) if steps else 0}: {_f(sl, 4)} s/step; "
             f"total e2e per run: {', '.join(_f(x, 1) for x in tot) if tot else '-'} s.")
     return table(["Step", "n", "TTFT s", "e2e s", "cached tok (med)", "prompt tok (med)", "cached share", "errors"],
-                 rows) + note
+                 rows) + note + truncation_note(ls)
 
 
 def s_m5(runs: list[dict]) -> str:
