@@ -1,51 +1,49 @@
 # Resume — current progress
 
-Updated: 2026-10-18 02:10 (local). Work resumed at 00:20 on a good network (HF ~30 MB/s),
-and large downloads are allowed again. Rewrite this after every major phase, and read it
-first when resuming.
+Updated: 2026-10-18 03:50 (local). Rewrite this after every major phase, and read it first
+when resuming.
 
-## Current state (2026-10-18 02:10)
+## Current state (2026-10-18 03:50)
 
-- **The harness is done.** Commit `6b6a2db`; 82 pytest pass.
-  - Measured sizes: agent prefix 14,905 tokens; screenshot 1,282; M1 trial 16,590
-    (1,641 new); M4 step-20 prompt 49,082.
-  - Profiles: llamacpp, omlx, vllm, lithos, mlxlm, mlc (xgrammar structured output), generic.
-- **Live quick validation passed** (unverified, in `raw/_unverified/`).
-  - llama.cpp 4-bit with MTP:
-    - G1–G4 pass.
-    - M1: warm TTFT 4.5 s vs cold 33.3 s, 14,947 cached tokens.
-    - M4: each step reuses all but ~1.7K new tokens, ~4.9 s per step.
-    - M7: 6/6.
-  - oMLX 4-bit:
-    - G1–G4 pass.
-    - M1: warm 3.35 s vs cold 24.0 s.
-    - M7: 6/6.
-    - `temperature 0` is honoured.
-- **Runner.** `scripts/run_framework.sh <fw> <variant> <tier> <profile> <tag> <suites> [args]`
-  runs serve → wait → warm-up → `run-all --preflight` → stop. The lock must already be held.
-- **Quiet-machine rule** (user, 01:46): publish only quiet runs.
-  - `scripts/quiet_check.sh` gates each suite.
-  - Disturbed runs go to `<fw>/raw/_unverified/`, which is gitignored, and are repeated.
-  - Tonight's direct-call numbers (Core AI vs MLX, 512 and 16K) are unverified, because of
-    background fixture generation. They will be re-run A/B/A/B.
-- **Core AI.**
-  - The 27B bundle is exported to `~/Developer/mlsys/models/coreai/qwen3_8_27b_qwen3_5_cfg_dynamic`
-    (16 GB; 296 s; 37.7 GB peak footprint).
-  - `llm-server` exists, so Core AI gets a text-only server row.
-- **MLC-LLM.**
-  - The nightly wheels abort on import even after re-signing (user-approved).
-  - The source build is in progress (agent). Tool calls go through xgrammar structured
-    output.
-- **GPU schedule.** The agent-benchmark session runs its 1.5–2 h harness smoke next. Our
-  formal matrix starts after it releases the lock.
+- **All seven frameworks are ready.** Installs and model artifacts are in place, and every
+  `serve.sh` variant passes a dry run:
+  - llama.cpp, oMLX, vLLM-Metal, lithos-metal, mlx-lm;
+  - Core AI, through `llm-server`, text-only;
+  - MLC-LLM, from a source build, on port 8700.
+- **Quiet-machine tooling** (commit `7a74090`; details in METHODOLOGY.md, "Quiet machine").
+  - `scripts/quietlib.py` provides `check`, `monitor` and `verify`; `quiet_check.sh` wraps
+    `check`.
+  - `scripts/run_framework.sh` runs one `run-all` per suite:
+    1. Before serving, the GPU must be idle with no model resident.
+    2. Before each suite, it waits up to 10 min for a quiet check to pass.
+    3. During the run, a monitor writes a TSV every 10 s into `<fw>/raw/`.
+    4. A disturbed suite moves to `raw/_unverified/` and is repeated once.
+    5. At the end, `summary.md` is regenerated from the verified files.
+
+    Options: `RUN_UNVERIFIED=1` runs a mechanics check; `SUITE_ARGS_<suite>` passes extra
+    arguments to one suite.
+  - `scripts/run_tier1.sh` runs the Tier-1 block (`llama-off llama-on llama-conc omlx vllm`)
+    with a 120 s cool-down between steps. M7 uses `--trials 1`.
+  - None of this has run against a live server yet. Do the mechanics check first.
+- **Blocker: `suggestd`.**
+  - PID 1005 has held one core at ~100% since about 01:40. It is running a
+    ProactiveHarvesting pass over Mail, Messages and Notes, and had used 122 CPU-min by 03:45.
+  - The auto-mode classifier denied `killall suggestd`.
+  - Options: the user runs `! killall suggestd` (launchd restarts it), or we wait. A
+    background watcher reports when it goes idle.
+- **GPU schedule.**
+  - 03:28: we took the lock, then swapped with the peer.
+  - Now: the peer runs its MCP arm (03:32 until about 04:30–05:00; not timed).
+  - Next: our mechanics check and Tier-1 (~4 h), then the references, back to back.
+  - While we time, the peer runs no test suites, analysis scripts or compiles.
 
 | # | Phase | Status |
 | --- | --- | --- |
 | 0 | Plan, repo scaffold, methodology | **done** |
-| 1 | Framework installs + flag research | **done** for 5 servers + Core AI. MLC-LLM: source build in progress. |
+| 1 | Framework installs + flag research | **done** (all seven) |
 | 1b | Manual smoke tests | **done** |
-| 2 | Harness + fixtures | **done** (live quick validation on llama.cpp and oMLX) |
-| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **next**, after the peer's slot |
+| 2 | Harness + fixtures + quiet-machine tooling | **done** (tooling still needs its live mechanics check) |
+| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **next**: Tier-1 after the peer's MCP arm |
 | 5 | Summary PR + Chinese summary to the agent-benchmark session | pending |
 
 ## Formal run plan (quiet machine, `--preflight` on every run)
@@ -148,15 +146,27 @@ Notes:
 
 ## Next steps (in order)
 
-1. **Finish the harness:** fixtures, suites, `summarize`. Resume from `harness/STATUS.md`. A subagent can do this, with no GPU needed.
-2. **Build the oMLX native kernels** (`omlx/env.md`, step 2).
-3. **Run the 8-bit gate and metrics.**
-   - Message the agent-benchmark session first, then take the GPU lock.
-   - Order: oMLX → vLLM-Metal → mlx-lm.
-   - Each framework gets a `bench/<framework>` PR, self-merged.
-4. **4-bit rows, lithos-metal, llama.cpp.** These need downloads (user's call), or the fallbacks above.
-5. **Core AI reference row.** Needs the BF16 download.
-6. **Summary.** Open the summary PR, and send the summary to the agent-benchmark session.
+1. When the peer releases the lock, message it, then run
+   `scripts/gpu_lock.sh acquire "Formal Tier-1 ..." 240`.
+2. **Idle calibration.** With nothing running, take six readings of
+   `scripts/quiet_check.sh` over about a minute. If the idle baseline sits near a limit,
+   adjust the `QUIET_*` defaults and record the change in METHODOLOGY.md.
+3. **Mechanics check** (`RUN_UNVERIFIED=1`):
+   - llama.cpp `mtp-off`, `m1,m4 --quick`;
+   - vLLM-Metal and oMLX, `m7 --quick`.
+
+   Check the process trees, the idle GPU %, the monitor TSV and the `verify` lines.
+4. Start `scripts/run_tier1.sh` in the background, and watch `logs/monitor-*.events` for
+   `DISTURBED`.
+5. **Per framework:**
+   1. Create the branch `bench/<fw>`.
+   2. Commit `raw/*.jsonl`, the monitor TSV, `summary.md`, `capabilities.md` and `env.md`.
+   3. Open a PR and self-merge it.
+   4. Update the README status table and this file.
+6. **References**, `--text-only`: lithos-metal, mlx-lm, Core AI, MLC-LLM.
+7. **The rest:** 8-bit rows, the direct-call A/B/A/B, and M6.
+8. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
+   session.
 
 ## Shared with the other session
 
