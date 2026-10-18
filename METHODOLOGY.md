@@ -63,6 +63,22 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
     within 5 s of a declaration.
     - A single declaration does not last: holding one assertion let them resume after about
       7 min. Hence the repeat.
+    - The declaration is not always enough. From 14:19 on 2026-10-18, suggestd worked
+      through a harvesting backlog (a queue of app content on disk) at ~100 % of a core and
+      ignored the heartbeat; on AC power its power budget never runs out. Killing it did not
+      help: launchd relaunched it on demand, and it went back to the queue within a minute.
+      `launchctl disable` does not unload a job that is already loaded, and
+      `launchctl bootout` is refused under SIP (error 150). So from 16:19 on 2026-10-18 the
+      process was paused with `kill -STOP` (run by the user), and launchd does not start
+      another copy while it is paused.
+    - The same happened with Spotlight's semantic index. From 17:13 on 2026-10-18,
+      spotlightknowledged generated document embeddings, about 3 per second, as
+      "foreground" text-processing tasks for mediaanalysisd. That held mediaanalysisd at
+      ~115 % through the heartbeat. Both were paused with `kill -STOP` at 17:29:33.
+    - The pre-flight output cannot show a paused process, so the windows are recorded
+      here. suggestd was paused from 16:19 and mediaanalysisd with spotlightknowledged from
+      17:29:33, all until _(resume time filled in when the user restores them)_. The timed
+      segment ended at 17:53.
     - The first declaration triggers a short "user returned" burst of about 30 s (Spotlight,
       widgets). The runner waits 45 s before its first check to absorb it.
     - Every framework runs under the same heartbeat.
@@ -103,7 +119,9 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
     run with a configuration doubt or a broken trial. Nothing from such a run is reported
     until it has been repeated cleanly.
   - No subagent work runs while a timed segment is in progress: no compiles, conversions,
-    fixture generation, test suites or downloads.
+    fixture generation, test suites or downloads. The agent session that drives the run
+    counts as foreign as well: its `claude` process uses 20–35 % CPU while it works. So
+    it stays idle during timed suites and only reads the runner's progress lines.
 - **Ordering.** When two frameworks are compared directly (e.g. Core AI vs MLX on the same
   protocol), their runs alternate A/B/A/B after an idle cool-down, so drift such as
   thermal throttling cannot favour either side.

@@ -1,44 +1,88 @@
 # Resume — current progress
 
-Updated: 2026-10-18 16:30 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 18:00 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 16:30): Tier-1 remainder running, suggestd paused
+## Current state (2026-10-18 18:00): Tier-1 measurements complete; PRs next
 
-- **suggestd.** The user killed it at 16:13. launchd relaunched it on demand, and within a
-  minute it was back on its harvesting queue at ~99 % (`caffeinate -u` had no effect).
-  - `launchctl disable gui/501/com.apple.suggestd` took effect (it is still in force), but
-    it does not unload the loaded job: after the next `killall`, launchd started it again
-    on an xpc event (runs = 3).
-  - `launchctl bootout` was refused under SIP, with error 150.
-  - At 16:19 the user ran `kill -STOP 43674`. The process shows state T at 0 % CPU, and
-    launchd keeps it as `running` and starts no other copy. METHODOLOGY.md §3 records the
-    window.
-  - **Restore after the segment, in this order:** `kill -CONT 43674`, then
-    `launchctl enable gui/501/com.apple.suggestd`. The user runs both (we ask). The
-    agent-benchmark session wants to know when it is restored; it reuses this method for
-    its own timed runs.
-- **Chain** (`scripts/run_tier1.sh vllm-rest llama-gate llama-anchor omlx-gate`, lock ETA
-  150 min):
-  1. vLLM-Metal gate (with G2b), then m3, m4, m5 and m7, all on one server;
-  2. the llama.cpp gate;
-  3. the llama.cpp M1 anchor (tag `4bit-mtp-off-anchor`);
-  4. the oMLX gate.
-- **Anchor acceptance**, fixed before the run. The 04:35 llama.cpp M1 had warm
-  4.361 s (4.066–4.432) and cold 31.205 s (31.127–31.362). The earlier runs count as
-  comparable with today's if both of these hold:
-  - the anchor's warm median lies within 4.066–4.432 s;
-  - its cold median lies within ±2 % of 31.205 s (30.58–31.83 s).
+- **Tier-1 is fully measured.** Every suite below passed the pre-flight and the monitor
+  check. The lock was released at 17:53:11, and both other sessions were told.
 
-  The machine is quieter now than at 04:35, when suggestd was still alive, so a slightly
-  faster anchor is expected. A slower one beyond the band means drift; investigate before
-  publishing any cross-session comparison.
-- **PR notes:**
-  - The new vLLM gate supersedes the 07:50 verified gate (summarize uses the latest
-    verified run); decide whether the superseded file is committed.
-  - The anchor writes its own section into `llama.cpp/summary.md`; publish it as a
-    validation row or keep it here.
-  - Commit the `run_tier1.sh` change with the results.
+  | Variant (tag) | Verified suites |
+  | --- | --- |
+  | llama.cpp `mtp-off` (`4bit-mtp-off`) | gate (17:30, with G2b) m1 m2 m3 m4 m7 |
+  | llama.cpp `mtp-on` (`4bit-mtp-on`) | m1 m3 m4 m7 |
+  | llama.cpp `conc` (`4bit-conc`) | m5 |
+  | llama.cpp anchor (`4bit-mtp-off-anchor`) | m1 (17:37) |
+  | oMLX `spec-off` (`4bit-spec-off`) | gate (17:43, with G2b) m1 m2 m3 m4 m5 m7 |
+  | vLLM-Metal `spec-off` (`4bit-spec-off`) | gate (16:32, with G2b) m1 m2 m3 m4 m5 m7 |
+
+  Spec-on is n/a for oMLX and vLLM-Metal (formal run plan below).
+- **This afternoon's segment, 16:31–17:53.**
+  - Chain 1, `scripts/run_tier1.sh vllm-rest llama-gate llama-anchor omlx-gate`
+    (`logs/tier1-rest2-20261018-163113.log`):
+    - vLLM-Metal: the gate, m3 and m4 verified.
+    - m5 was disturbed at 17:13:49: mediaanalysisd went to ~115 %. It was moved to
+      `raw/_unverified/`. The retry never started, because the machine was not quiet within
+      600 s, so the run stopped before m7.
+    - The llama.cpp gate, the anchor and the oMLX gate then verified.
+  - Chain 2, `scripts/run_tier1.sh vllm-m5m7` (`logs/tier1-rest3-20261018-174648.log`):
+    vLLM-Metal m5 and m7 verified.
+- **Background daemons paused for the timed runs** (METHODOLOGY.md §3 has the details):
+  - **suggestd**, PID 43674. The user killed it at 16:13, but launchd relaunched it on
+    demand and it went back to its harvesting queue at ~99 %; `caffeinate -u` had no effect.
+    - `launchctl disable gui/501/com.apple.suggestd` is in force, but it does not unload
+      the loaded job: after a `killall`, launchd started it again on an xpc event.
+    - `launchctl bootout` is refused under SIP (error 150).
+    - `kill -STOP 43674` at 16:19 (the user).
+  - **spotlightknowledged** (PID 50910) and **mediaanalysisd** (PID 1221). From 17:13,
+    spotlightknowledged generated Spotlight document embeddings, about 3 per second, as
+    "foreground" text-processing tasks for mediaanalysisd. That kept mediaanalysisd at
+    ~115 %, and the heartbeat had no effect.
+    - `kill -STOP 50910 1221` at 17:29:33 (on the user's request).
+    - The PID 27281 spotlightknowledged belongs to an iOS simulator runtime; it was idle
+      and left alone.
+  - **Restore** (the user; we asked at 17:55): `kill -CONT 43674 1221 50910`, then
+    `launchctl enable gui/501/com.apple.suggestd`. Then fill the resume time into
+    METHODOLOGY.md §3. The agent-benchmark session wants to know when this is done; it may
+    want the daemons paused for its own timed runs.
+  - **Our own session counts too.** This session's `claude` process runs at 20–35 % CPU
+    while it is working, and it is outside the run's process tree. Stay idle during timed
+    suites: no `log show`, no greps, and no summarize.
+- **Anchor: passed** (acceptance fixed before the run; see METHODOLOGY.md §3).
+
+  | Phase | 04:35 run | Anchor, 17:37 | Band |
+  | --- | --- | --- | --- |
+  | warm | 4.361 s (4.066–4.432) | 4.402 s (4.070–4.486) | 4.066–4.432 s |
+  | cold | 31.205 s (31.127–31.362) | 31.390 s (30.941–32.175) | 30.58–31.83 s |
+
+  The night-time llama.cpp and oMLX runs are therefore comparable with today's vLLM-Metal
+  runs.
+- **G2b, formal and verified.** The verdicts match the afternoon's mechanics runs.
+
+  | Framework | G2b: image in `role=tool` (Hermes path) | G3: image in `tool_result` (Claude Code path) | G5 at 64K: TTFT, peak footprint |
+  | --- | --- | --- | --- |
+  | llama.cpp b11717 | PASS (prompt_tokens 1920 vs control 1935) | PASS | 151.0 s, 18.0 GiB |
+  | vLLM-Metal 0.31.0 | PASS (1920 vs 1935) | PASS | 163.1 s, 62.4 GiB |
+  | oMLX 0.7.1rc1, stock | **FAIL**: image dropped (639 vs 1936; it answered "a blank white display") | PASS | 101.7 s, 23.0 GiB |
+
+  More from the oMLX gate:
+  - `reasoning_effort=none` alone does not disable thinking; `enable_thinking=false` is
+    needed too.
+  - Its Anthropic `usage.input_tokens` is 0, by design. When a request carries
+    `cache_control` (Claude Code's requests do), oMLX splits the prompt the Anthropic way:
+    `input_tokens` 0, plus `cache_creation_input_tokens` and `cache_read_input_tokens`
+    (`omlx/api/anthropic_utils.py` 1059–1066, found by the agent-benchmark session). The
+    prompt length is the sum of the three. Our G3 drop check reads `input_tokens` only, so
+    for oMLX it could not compare token counts; the verdict rests on the code read back.
+- **Decisions for the PRs:**
+  - **Superseded gates.** vLLM-Metal (07:50) and oMLX (night) also have earlier verified
+    gates without G2b, while summarize reports the latest. Commit both and say in
+    `summary.md` which one the table uses.
+  - **The anchor** has its own section in `llama.cpp/summary.md`. Publish it as a
+    validation row, with the 04:35 comparison.
+  - **Scripts.** Commit the `run_tier1.sh` steps (`vllm-rest`, `llama-gate`,
+    `llama-anchor`, `omlx-gate`, `vllm-m5m7`) with the results.
 
 ## State at 14:55: blocked on suggestd; G2b answered (unverified)
 
@@ -215,7 +259,7 @@ when resuming.
 | 1 | Framework installs + flag research | **done** (all seven) |
 | 1b | Manual smoke tests | **done** |
 | 2 | Harness + fixtures + quiet-machine tooling | **done**; live mechanics check passed 04:16–04:23 |
-| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **in progress**: Tier-1 ~80 % done, paused; no PR yet |
+| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **in progress**: Tier-1 measured (17:53); PRs next; references, 8-bit rows and M6 pending |
 | 5 | Summary PR + Chinese summary to the agent-benchmark session | pending |
 
 ## Formal run plan (quiet machine, `--preflight` on every run)
@@ -318,38 +362,35 @@ Notes:
 
 ## Next steps (in order)
 
-1. **Resume Tier-1.** Message the agent-benchmark session first, then run
-   `scripts/gpu_lock.sh acquire "Tier-1 remainder: vLLM-Metal m3-m7, gates with G2b, anchor" 120`.
-   Start the vLLM part in the background (`nohup … > logs/tier1-rest-<ts>.log 2>&1 &`) and
-   watch it with a Monitor:
-   ```
-   scripts/run_framework.sh vllm-metal spec-off 4bit vllm 4bit-spec-off m3,m4,m5,m7 --spec-label off
-   ```
-   Expect about 60 min, more if daytime use triggers repeats.
-2. **Implement G2b and the G3 tool_result-image sub-probe** (above). Do this while no timed
-   segment runs, then run pytest. The agent-benchmark session ran a G2b probe on its own
-   oMLX 0.7.1rc1 at 10:14 and will send the results; use them as a reference.
-3. **Re-run the gates with G2b**, plus the anchor:
-   ```
-   scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off gate
-   scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-anchor m1
-   scripts/run_framework.sh omlx spec-off 4bit omlx 4bit-spec-off gate
-   scripts/run_framework.sh vllm-metal spec-off 4bit vllm 4bit-spec-off gate
-   ```
-   Then release the lock and tell the peer.
-4. **Fix the open issues** above: summarize, the thinking-decode check, the anchor
-   comparison and the redaction. Run pytest outside any timed segment.
-5. **Per-framework PRs** (`bench/llama.cpp`, `bench/omlx`, `bench/vllm-metal`):
-   1. Commit `raw/*.jsonl`, `raw/*.md`, the monitor TSVs, `summary.md`, `capabilities.md`
-      and the `env.md` updates.
+1. **Restore the paused daemons** (the user; asked at 17:55): `kill -CONT 43674 1221 50910`,
+   then `launchctl enable gui/501/com.apple.suggestd`. Fill the time into METHODOLOGY.md §3
+   and tell the agent-benchmark session. Pause them again only for a later timed segment,
+   and only if they are busy then.
+2. **Fix the open issues** (no GPU; run pytest afterwards):
+   1. G3 drop check, Anthropic path: compare the sum `input_tokens +
+      cache_creation_input_tokens + cache_read_input_tokens`. Check whether the raw jsonl
+      keeps the full usage; if it does, recompute instead of re-running.
+   2. Thinking-mode decode: llama.cpp is ~25 % slower with thinking on, but vLLM-Metal is
+      not (M3 at 16K: 25.5 tok/s against 26.3). Check llama.cpp's request shape and
+      server-side `timings`.
+   3. M4: report the slope with and without step 1 (oMLX step 1 is a near-full re-prefill).
+   4. Redaction: show `/Applications/` paths as `<app>` in quietlib, and redact third-party
+      app names in the monitor TSVs and pre-flight blocks before committing.
+3. **Per-framework PRs** (`bench/llama.cpp`, `bench/omlx`, `bench/vllm-metal`):
+   1. Commit `raw/*.jsonl`, `raw/*.md`, the monitor TSVs, `summary.md`, `capabilities.md`,
+      the `env.md` updates and `scripts/run_tier1.sh`.
    2. Open the PR and self-merge it.
    3. Update the README status table and this file.
-6. **References**, `--text-only`, one at a time with the lock: lithos-metal (`dspark`,
-   `no-draft`, `nvfp4`, with `--server-log`), mlx-lm, Core AI (`--profile generic`) and
-   MLC-LLM. For MLC-LLM, run G1 first with the log open.
-7. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
+4. **Interim Chinese summary to the agent-benchmark session**: the Tier-1 comparison (gate
+   pass/fail and M1–M7 for the three candidates), since the user is choosing a serving
+   stack now. The final summary follows step 7.
+5. **References**, `--text-only`, one at a time with the lock (and the 10 min notice to
+   `localmelo_main`): lithos-metal (`dspark`, `no-draft`, `nvfp4`, with `--server-log`),
+   mlx-lm, Core AI (`--profile generic`) and MLC-LLM. For MLC-LLM, run G1 first with the
+   log open.
+6. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
    A/B/A/B, and M6 (10–15 min for the candidates, 30 min for the finalists).
-8. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
+7. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
    session: gate pass/fail per framework, the metrics, the recommendation and the reasons.
 
 ## Shared with the other session
