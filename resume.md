@@ -1,23 +1,46 @@
 # Resume — current progress
 
-Updated: 2026-10-17 23:40 (local). The user paused work around 23:50; they were away
-on a poor network. Rewrite this after every major phase, and read it first when resuming.
+Updated: 2026-10-18 00:40 (local). Work resumed at 00:20 on a good network (HF ~30 MB/s),
+and large downloads are allowed again. Rewrite this after every major phase, and read it
+first when resuming.
 
-## State at the pause
+## Current state (2026-10-18 00:40)
 
-- **Nothing is running.** No GPU lock is held, no server listens on 8700–8705, no
-  download runs, and every subagent has finished.
-- **No measurements yet.** Everything below comes from installs plus source and `--help`
-  reading. Nothing has been verified live.
+- **Downloads running in the background.** `scripts/download_models.sh core gguf extra`,
+  log in `logs/download.log`. Progress:
+  - DSpark head: complete.
+  - MLX 4-bit: downloading.
+  - GGUF, then NVFP4 and BF16: still to come.
+  - The 0-byte `.incomplete` files dated 23:12 are leftovers from the interrupted first
+    attempt.
+- **oMLX native kernels built.** All five are available, including `qwen35_prefill`
+  with the NAX variant.
+- **Smoke tests.** Manual, not timed, on the 8-bit checkpoint.
+  - **vLLM-Metal: OK.**
+    - The checkpoint as shipped fails at startup: its `processor_config.json` names
+      `Qwen3VLImageProcessor`, which is not a transformers class.
+    - Workaround: a metadata-only view at `~/Developer/mlsys/models/derived/Qwen3.8-27B-8bit-procfix`.
+    - Text, streamed tool calls, image read-back, and thinking all work.
+      `/v1/messages` thinks by default.
+  - **mlx-lm: as predicted.**
+    - Text and tool calls work; each tool call arrives as a single delta at the end.
+    - Images → 404. `/v1/messages` → 404.
+  - Details are in each `env.md`.
+- **Running agents.**
+  - Harness completion: fixtures, suites, `run-all`, `summarize`.
+  - Serve/lock scripts: `scripts/serve.sh`, `gpu_lock.sh`, `omlx_configure.sh`, the lithos
+    `lm_head` patch, and `make_procfix.sh`.
+- **Lock and ports.** No GPU lock held; no server on 8700–8705.
 
 | # | Phase | Status |
 | --- | --- | --- |
 | 0 | Plan, repo scaffold, methodology | **done**. Public repo: github.com/xthomaswang/qwen3.8-27b_20261017-2258_benchmark |
-| 1 | Framework installs + flag research | **done** for all five. Details are in each `<framework>/env.md`, including its own "Status / remaining work" section. One gap: the oMLX native kernels are not built yet. |
-| 2 | Harness + fixtures | **partial**. Client layer done: OpenAI and Anthropic SSE, TTFT, usage/cached tokens, concurrency, memory sampler, provenance; 16 pytest tests pass. Fixtures, suites G1–G5 / M1–M7, and `summarize` are not built yet. See `harness/STATUS.md`. |
-| 3 | Gate G1–G5 per framework (live) | pending |
-| 4 | Metrics M1–M7 per framework, one `bench/<framework>` PR each, self-merged | pending |
-| 5 | Summary PR, plus a Chinese summary sent to the agent-benchmark session | pending |
+| 1 | Framework installs + flag research | **done** (oMLX kernels built 00:25) |
+| 1b | Manual smoke tests (8-bit) | vLLM-Metal **done**, mlx-lm **done**. oMLX waits on `omlx_configure.sh`. lithos-metal and llama.cpp wait on downloads. |
+| 2 | Harness + fixtures | **in progress** (agent) |
+| 3 | Gate G1–G5 per framework (live, via harness) | pending |
+| 4 | Metrics M1–M7 per framework; one `bench/<framework>` PR each, self-merged | pending |
+| 5 | Summary PR, plus a Chinese summary to the agent-benchmark session | pending |
 
 ## Frameworks: installs and expected gate results (from source; verify live)
 
@@ -26,7 +49,7 @@ on a poor network. Rewrite this after every major phase, and read it first when 
 | llama.cpp | `llama.cpp`, b11717 (848bbda), Metal build in `build/bin` | pass (Qwen3-Coder XML parser) | pass (`--mmproj`) | pass; `thinking: adaptive` is ignored | pass | pass (~22 GiB at 64K, est.) | `-np 3 -kvu` | MTP: `-md mtp.gguf --spec-type draft-mtp` |
 | oMLX | `omlx_0.7`, v0.7.1rc1 (7a5a3d75); isolated `.bench-home`; **kernels not built** | pass; the call arrives as one delta at the end of the turn | pass (VLM path) | pass; streaming `tool_use` still to check | pass; `reasoning_effort` merged into template kwargs | pass (8 GiB KV at 131072) | continuous batching | none from local files: no MTP weights in 8-bit; no DFlash draft or Splash |
 | vLLM-Metal | `vllm-metal`, v0.31.0 (e7a0c90b); wheels kept in `.venv/wheels` | pass (verify) | likely pass (verify native multimodal path) | pass for text + tool_use; thinking defaults on (xhigh) | `enable_thinking` pass; `reasoning_effort` unmapped | pass (verify memory) | `--max-num-seqs` | **unsupported**: vllm-metal excludes hybrid GDN targets from spec decoding, and any spec config disables the prefix cache; record M3 spec-on as n/a |
-| lithos-metal | `lithos-metal`, v0.1.2 (46b2bc4c) | pass, only if no thinking fields are sent | **fail** (HTTP 400) | partial: text + tool_use; images and `adaptive` → 400 | **fail**: thinking hard-wired off | unknown (upstream tested ≤33K) | **429** on concurrent requests | DSpark; needs the 1.1 GB head |
+| lithos-metal | `lithos-metal`, v0.1.2 (46b2bc4c); note: the DSpark repo ships a `lithos-metal-runtime.patch` (unread) | pass, only if no thinking fields are sent | **fail** (HTTP 400) | partial: text + tool_use; images and `adaptive` → 400 | **fail**: thinking hard-wired off | unknown (upstream tested ≤33K) | **429** on concurrent requests | DSpark; needs the 1.1 GB head |
 | mlx-lm | `mlx-lm`, v0.32.2 (93e6d4a6) | pass (`qwen3_coder` auto; whole call in one delta) | **fail** (HTTP 404 "Only 'text'") | **fail** (no route) | partial: `enable_thinking` works, `reasoning_effort` ignored | unknown (~4 GiB KV at 64K, est.) | — | none |
 | Core AI | not set up; reference only (no HTTP server) | — | — | — | — | — | — | — |
 

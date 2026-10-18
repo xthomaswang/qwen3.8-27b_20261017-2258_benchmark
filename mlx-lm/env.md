@@ -319,3 +319,17 @@ Not done. No model was loaded and no gate test has run. To resume:
    (`scripts/download_models.sh core`). Then repeat steps 2–5 with that snapshot.
 7. If the venv must be rebuilt, run the install commands in section 1 (about 96 MiB of
    downloads).
+
+## Smoke test, 2026-10-18 00:35 (8-bit, manual, not timed)
+
+`mlx_lm.server` was started with the launch command above, against the 8-bit HF snapshot;
+it was ready in about 6 s. Requests sent `model: "default_model"`. These are first-request
+timings, not benchmark numbers.
+
+| Probe | Result |
+| --- | --- |
+| Streaming text | OK, TTFT 1.44 s |
+| Streaming tool call | OK: `get_weather {"city": "Paris", "unit": "c"}`, `finish_reason=tool_calls`. The whole call arrives in a single delta at the end of generation, so "TTFT" for a tool-only reply is ≈ end-to-end (2.80 s vs 2.85 s). |
+| Image | HTTP 404 `Only 'text' content type is supported.` — G2 fails, as predicted |
+| Thinking on | Reasoning returned in the `reasoning` field |
+| `/v1/messages` | HTTP 404 — G3 fails, as predicted |

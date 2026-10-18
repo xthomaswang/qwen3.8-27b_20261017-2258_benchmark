@@ -307,3 +307,36 @@ vllm serve --help=all | grep -nE 'tool-call-parser|reasoning-parser|prompt-token
    `xhigh`, so record the latency impact.
 8. Resolved `max_num_batched_tokens`, `max_num_seqs` and KV capacity from the startup log.
 9. Memory at a 64K prompt.
+
+## 8. Smoke test, 2026-10-18 00:28 (8-bit, manual, not timed)
+
+**Startup failure with the checkpoint as shipped.** `vllm serve mlx-community/Qwen3.8-27B-8bit`
+aborts during multimodal budget setup with `ValueError: Unrecognized image processor`. The
+cause is in the checkpoint: its `processor_config.json` names
+`image_processor_type: Qwen3VLImageProcessor`, and transformers 5.17 (the version vllm-metal
+pins, `<5.18`) has no such class. 5.20.1 doesn't have it either. Its
+`preprocessor_config.json` names the equivalent `Qwen2VLImageProcessorFast`.
+
+**Workaround.** Serve a metadata-only view at
+`~/Developer/mlsys/models/derived/Qwen3.8-27B-8bit-procfix`:
+- every file is a symlink into the HF snapshot;
+- `processor_config.json` is a patched copy, with `image_processor_type` set to
+  `Qwen2VLImageProcessor`;
+- weights and preprocessing parameters are unchanged.
+
+Launch with `--served-model-name qwen3.8-27b-8bit`. Startup log: MLX-VLM model loaded in 2.97 s,
+NAX prefill attention kernels loaded (M5 tensor units), CPU KV cache 351,031 tokens,
+maximum concurrency 2.68× at 131,072 tokens per request, engine init 13.9 s.
+
+**Manual probes.** `temperature=0`, `enable_thinking=false` unless noted; first-request
+timings, not benchmark numbers.
+
+| Probe | Result |
+| --- | --- |
+| Streaming text | OK, TTFT 1.15 s |
+| Streaming tool call | OK: `get_weather {"city": "Paris", "unit": "c"}`, `finish_reason=tool_calls`, TTFT 0.94 s |
+| Image (1280×1024, random code) | OK: read `WK3-DEG` correctly; prompt 1308 tokens, 1280 of them image (`usage.prompt_tokens_details.multimodal_tokens.image`); TTFT 2.29 s |
+| Thinking on (`enable_thinking=true`, `reasoning_effort=medium`) | Reasoning returned in the `reasoning` field |
+| `/v1/messages`, no `thinking` field | HTTP 200, but the response starts with a `thinking` block (template default) |
+
+`usage.prompt_tokens_details` reports `cached_tokens` and `created_cache_tokens`.
