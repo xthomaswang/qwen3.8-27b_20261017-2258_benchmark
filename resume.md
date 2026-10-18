@@ -72,6 +72,15 @@ when resuming.
   - **Then.** Run pytest. Re-run the gate on llama.cpp (it needs one anyway), oMLX and
     vLLM-Metal, about 15 min. If a framework fails G2b, flag it in the summary. M1 and M4
     use `--screenshot-placement user` by default; `tool` exists in the harness if needed.
+  - **First data point** (agent-benchmark session, 10:15, on its own oMLX 0.7.1rc1 8-bit
+    instance, with our `g2-verify.png`; untimed). To be confirmed on our 4-bit runs.
+    - OpenAI: the image in the `role=tool` message is **dropped**. prompt_tokens was 313
+      against 1603 for the user-message control, and the model invented a code.
+    - Anthropic: the image in `tool_result` works. prompt_tokens was 1600 against 1601,
+      and the code was read correctly.
+    - So on oMLX, Claude Code sees screenshots, but Hermes-style OpenAI tool images do not.
+    - Their stdlib probe is at `experiments/personal-agent-bench/scripts/probe_tool_images.py`.
+      Read it as a reference; do not copy their run data into this repo.
 - **Open issues to fix before the PRs.**
   1. **oMLX M4 errors.**
      - What happens: 22 of 63 requests ended with an `incomplete_tool_call` stream error,
@@ -274,8 +283,9 @@ Rules for both sessions:
 - Agent traces from the agent benchmark stay on this machine. They are never committed to the public serving-benchmark repo.
 
 State at the 2026-10-18 10:14 pause:
-- At 10:14:38 the agent-benchmark session took the lock for its untimed G2b probe on 8500
-  (ETA 15 min). Nothing of ours runs: no server on 8700–8705, no heartbeat, no monitor.
+- The agent-benchmark session ran its untimed G2b probe on 8500 from 10:14:38 and released
+  the lock at 10:15:19. No lock is held. Nothing of ours runs: no server on 8700–8705, no
+  heartbeat, no monitor.
 - After resuming, local_ai-benchmark messages the agent-benchmark session before its next
   lock.
 - Whether the agent benchmark switches from 8-bit to 4-bit is the user's call, made after the
