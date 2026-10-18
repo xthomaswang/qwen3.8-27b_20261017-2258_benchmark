@@ -1,9 +1,52 @@
 # Resume — current progress
 
-Updated: 2026-10-18 10:15 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 14:55 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 10:15): Tier-1 paused again by the user
+## Current state (2026-10-18 14:55): blocked on suggestd; G2b answered (unverified)
+
+- **14:22–14:52 session.**
+  - The user said continue, so we took the lock at 14:22.
+  - **The vLLM-Metal m3–m7 run never started.** suggestd was back at ~100 % of a core
+    (188 CPU-min by 14:52), and this time the 60 s `caffeinate -u` heartbeat did not stop
+    it; the lid had just been opened at 14:19. The pre-serve check gave up after 300 s with
+    "nothing started".
+  - The user was asked to run `! killall suggestd`; the classifier still blocks us from
+    doing it.
+  - While blocked, we landed the harness changes (below) and ran the three gates in
+    mechanics mode to answer G2b.
+  - The lock was released at 14:52:33. Both other sessions were told: the agent-benchmark
+    session, and `localmelo_main` (socket `uds:/tmp/cc-socks/96257.sock`).
+  - **Protocol addition:** message `localmelo_main` at least 10 min before taking the lock.
+    It watches the lock file and stops its CPU work within ~15 s.
+- **G2b answered** (unverified: mechanics mode, with suggestd busy). The functional
+  verdicts stand; timing parts such as G5 TTFT are not publishable from these runs.
+
+  | Framework | G2b: image in `role=tool` (Hermes path) | G3: image in `tool_result` (Claude Code path) |
+  | --- | --- | --- |
+  | llama.cpp b11717 | PASS (prompt_tokens 1920 vs control 1935) | PASS |
+  | vLLM-Metal 0.31.0 | PASS (1920 vs 1935) | PASS |
+  | oMLX 0.7.1rc1, stock | **FAIL**: image dropped (639 vs 1936); model cannot see it | PASS |
+
+  Other notes from these gates:
+  - G5 peak footprint at 64K: llama.cpp 18.0 GiB, oMLX 23.0 GiB, vLLM-Metal 62.5 GiB (it
+    reserves 0.55 × RAM of KV at startup).
+  - vLLM-Metal rejects `reasoning_effort=high` with 400.
+  - oMLX's SSD prefix cache survives restarts: G1 cold TTFT was 1.3 s. Our cold
+    measurements carry nonces, so they are not affected.
+- **Harness changes** (85 tests pass):
+  - `ef9bb1e`: G2b, and the G3 tool_result-image probe.
+  - `ef9bb1e` also: summarize counts `incomplete_tool_call` cap-truncated streams as latency
+    samples, and recomputes the M4 slope from the request lines.
+  - `511f72b`: `capabilities.md` shows only verified gate runs.
+- **Correction to issue 1.** oMLX's M4 run totals were never wrong: they include every
+  step's e2e. Only the per-step n and the slope were affected, and both are fixed. The
+  regenerated table shows a real effect: oMLX step 1 TTFT is about 17.9 s, close to a full
+  re-prefill, against about 3.7 s from step 2 on. Its hybrid prefix cache does not reuse
+  the step-0 prompt at step 1. For comparison, llama.cpp is 5.7 s at step 1. Report the
+  slope with and without step 1.
+
+## State before 14:22 (second pause, 10:14)
 
 - **Two pauses so far, both on the user's request.**
   - The first was at 08:39.
