@@ -1,50 +1,74 @@
 # Resume — current progress
 
-Updated: 2026-10-18 01:25 (local). Work resumed at 00:20 on a good network (HF ~30 MB/s),
+Updated: 2026-10-18 02:10 (local). Work resumed at 00:20 on a good network (HF ~30 MB/s),
 and large downloads are allowed again. Rewrite this after every major phase, and read it
 first when resuming.
 
-## Current state (2026-10-18 01:25)
+## Current state (2026-10-18 02:10)
 
-- **Checkpoints.** All are downloaded (`done: core gguf extra` at 01:10): 8-bit, 4-bit,
-  DSpark head, GGUF + MTP + mmproj, NVFP4, BF16.
-- **Manual smoke tests (not timed) on all five servers are done.** Results are in each
-  `env.md` under "Smoke test":
-  - **llama.cpp** (4-bit, MTP off/on): text, streamed tool calls, image read-back,
-    thinking and `/v1/messages` all OK. MTP draft acceptance 0.5–0.9; mmproj and MTP
-    coexist.
-  - **oMLX** (4-bit): text, tool calls (one final delta), image, thinking and
-    `/v1/messages` all OK. The model loads on first request (17 s).
-  - **vLLM-Metal** (8-bit): OK, through the procfix view.
-  - **lithos-metal** (4-bit and NVFP4, DSpark): text, tool calls and `/v1/messages`
-    text OK. Images → 400; thinking is hard-wired off. 4-bit needs the local patch, now
-    applied on branch `bench/mlx-head-rename` (73b8cb6).
-  - **mlx-lm** (8-bit): text and tool calls OK. Images and `/v1/messages` → 404.
-- **Incident, fixed.** At 00:28 the procfix view's `README.md` symlink caused a write
-  through into the shared HF blob (the 8-bit model card). Restored at 01:15 with a
-  hash-verified original. The peer verified all 19 files against HF. Views now use
-  regular files for anything we write.
-- **Scripts done** (`scripts/README.md`): `serve.sh`, `gpu_lock.sh` (atomic),
-  `wait_ready.sh`, `stop_server.sh`, `omlx_configure.sh`, `make_procfix.sh`,
-  `hf_snapshot.py`.
-- **Still running:**
-  - the harness agent (fixtures, suites, `run-all`, `summarize`);
-  - the MLC-LLM feasibility agent;
-  - the Core AI setup agent (a tiny-model toolchain check done under our lock,
-    01:04–01:09).
-- **Lock and servers.** No lock held; no servers running.
-- **Peer scheduling.** The agent-benchmark session wants a 1–2 h GPU slot for its harness
-  smoke test. It was offered the GPU now (01:22), with our formal runs after.
+- **The harness is done.** Commit `6b6a2db`; 82 pytest pass.
+  - Measured sizes: agent prefix 14,905 tokens; screenshot 1,282; M1 trial 16,590
+    (1,641 new); M4 step-20 prompt 49,082.
+  - Profiles: llamacpp, omlx, vllm, lithos, mlxlm, mlc (xgrammar structured output), generic.
+- **Live quick validation passed** (unverified, in `raw/_unverified/`).
+  - llama.cpp 4-bit with MTP:
+    - G1–G4 pass.
+    - M1: warm TTFT 4.5 s vs cold 33.3 s, 14,947 cached tokens.
+    - M4: each step reuses all but ~1.7K new tokens, ~4.9 s per step.
+    - M7: 6/6.
+  - oMLX 4-bit:
+    - G1–G4 pass.
+    - M1: warm 3.35 s vs cold 24.0 s.
+    - M7: 6/6.
+    - `temperature 0` is honoured.
+- **Runner.** `scripts/run_framework.sh <fw> <variant> <tier> <profile> <tag> <suites> [args]`
+  runs serve → wait → warm-up → `run-all --preflight` → stop. The lock must already be held.
+- **Quiet-machine rule** (user, 01:46): publish only quiet runs.
+  - `scripts/quiet_check.sh` gates each suite.
+  - Disturbed runs go to `<fw>/raw/_unverified/`, which is gitignored, and are repeated.
+  - Tonight's direct-call numbers (Core AI vs MLX, 512 and 16K) are unverified, because of
+    background fixture generation. They will be re-run A/B/A/B.
+- **Core AI.**
+  - The 27B bundle is exported to `~/Developer/mlsys/models/coreai/qwen3_8_27b_qwen3_5_cfg_dynamic`
+    (16 GB; 296 s; 37.7 GB peak footprint).
+  - `llm-server` exists, so Core AI gets a text-only server row.
+- **MLC-LLM.**
+  - The nightly wheels abort on import even after re-signing (user-approved).
+  - The source build is in progress (agent). Tool calls go through xgrammar structured
+    output.
+- **GPU schedule.** The agent-benchmark session runs its 1.5–2 h harness smoke next. Our
+  formal matrix starts after it releases the lock.
 
 | # | Phase | Status |
 | --- | --- | --- |
 | 0 | Plan, repo scaffold, methodology | **done** |
-| 1 | Framework installs + flag research | **done**. MLC-LLM and Core AI were added 2026-10-18; their agents are running. |
-| 1b | Manual smoke tests | **done** for llama.cpp, oMLX, vLLM-Metal, lithos-metal, mlx-lm |
-| 2 | Harness + fixtures | **in progress** (agent) |
-| 3 | Gate G1–G5 per framework (live, via harness) | pending |
-| 4 | Metrics M1–M7 per framework; one `bench/<framework>` PR each, self-merged | pending |
+| 1 | Framework installs + flag research | **done** for 5 servers + Core AI. MLC-LLM: source build in progress. |
+| 1b | Manual smoke tests | **done** |
+| 2 | Harness + fixtures | **done** (live quick validation on llama.cpp and oMLX) |
+| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **next**, after the peer's slot |
 | 5 | Summary PR + Chinese summary to the agent-benchmark session | pending |
+
+## Formal run plan (quiet machine, `--preflight` on every run)
+
+1. **Agent candidates, 4-bit, full suites:**
+   - llama.cpp `mtp-off` and `mtp-on`; the `conc` variant is used only for M5.
+   - oMLX `spec-off`.
+   - vLLM-Metal `spec-off`. Spec-on is n/a for oMLX and vLLM, with the reasons recorded.
+2. **References, 4-bit, `--text-only`:**
+   - lithos-metal: `dspark`, `no-draft`, `nvfp4`, with `--server-log`.
+   - mlx-lm.
+   - Core AI: `--profile generic`; force `--text-only`, because images are dropped silently.
+   - MLC-LLM: run G1 alone first with the log open.
+3. **8-bit rows** for oMLX, vLLM-Metal and mlx-lm, on M1, M4 and M7.
+4. **Direct-call A/B/A/B:** Core AI vs `mlx_lm.benchmark`, 512 and 16K, 60 s idle between runs.
+5. **M6 stability:** 10–15 min for the three candidates; 30 min for the two finalists.
+6. **Trials:** run M7 separately with `--trials 1`. For no-cache servers, budget about
+   15 min for each M3 64K cell.
+
+**Caveats to carry into the summaries:**
+- vLLM reserves 0.55 × RAM of KV at startup.
+- Text-only substitution skips the vision encoder.
+- Spec on/off exists only for llama.cpp (MTP) and lithos-metal (DSpark).
 
 ## Frameworks: installs and expected gate results (from source; verify live)
 
