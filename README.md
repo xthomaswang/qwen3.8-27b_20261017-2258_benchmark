@@ -4,7 +4,9 @@ Question: **which local serving framework is the fastest and most suitable backe
 agent workloads** (Claude Code / Hermes-style harnesses, computer use with screenshots)
 on a MacBook Pro M5 Max with 128 GB unified memory?
 
-Every framework serves the same model, Qwen3.8-27B, at a 4-bit tier. Each one first goes
+Every framework serves the same model, Qwen3.8-27B, at a 4-bit tier. The MLX-based
+stacks also get an 8-bit row (`mlx-community/Qwen3.8-27B-8bit`), which is the checkpoint
+the agent benchmark currently uses. Each one first goes
 through a capability gate (OpenAI-compatible streaming + tool calls, image input,
 Anthropic Messages, thinking control, context length). Then it is measured on
 agent-shaped latency: cached-prefix TTFT, short structured decodes with and without
@@ -31,9 +33,13 @@ harness/           benchmark client (uv project), used unchanged against every s
 fixtures/          synthetic inputs: fake-UI screenshots, tool-call suite, agent prefix
 scripts/           download + per-framework setup helpers
 <framework>/       env.md (exact versions/flags), capabilities.md (gate), raw/*.jsonl, summary.md
-envs/              (gitignored) venvs, upstream clones, build trees
 logs/              (gitignored) raw server logs
 ```
+
+This repo holds only the experiment itself: protocol, inputs, scripts, results.
+Framework sources and their venvs live outside it, in `~/Developer/mlsys/serving/<framework>`.
+oMLX 0.7 is a separate checkout at `serving/omlx_0.7` with an isolated base path. The
+older `serving/omlx` (0.3.9) is a different, untouched install.
 
 ## Workflow
 
