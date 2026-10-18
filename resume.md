@@ -85,7 +85,19 @@ when resuming.
       oMLX worktree to keep OpenAI tool-message images, following oMLX's Anthropic path:
       branch `pab/openai-tool-message-images`, commit `57620a3f`, not pushed upstream. It was
       re-testing that at 10:21. Our `serving/omlx_0.7` stays stock 0.7.1rc1, so our G2b
-      should show the drop. In the summary, report the patch as a known, unreleased fix.
+      should show the drop. In the summary, report the patch as a known, unreleased fix. The patched build passed G2b (10:26): it read the code from the `role=tool`
+      image, with 1600 prompt tokens.
+    - **Client-side caveats for the summary** (from the agent-benchmark session; these are
+      not framework issues):
+      - **Hermes.** By default Hermes sends no image at all. It cannot find our custom
+        provider's Qwen3.8 in models.dev, so it treats the model as non-vision and replaces
+        MCP images with a `MEDIA:<path>` text reference. Only with
+        `model.supports_vision: true` in its config do images reach the `role=tool`
+        message. G2b models that configured case.
+      - **Claude Code.** With the MCP filesystem server's `read_media_file`, Claude Code
+        sends the image block *and* `structuredContent`, a second base64 copy as about
+        82 KB of text. One 1280×1024 screenshot step then costs about 64K prompt tokens.
+        Worth noting for long screenshot trajectories.
 - **Open issues to fix before the PRs.**
   1. **oMLX M4 errors.**
      - What happens: 22 of 63 requests ended with an `incomplete_tool_call` stream error,
@@ -288,8 +300,8 @@ Rules for both sessions:
 - Agent traces from the agent benchmark stay on this machine. They are never committed to the public serving-benchmark repo.
 
 State at the 2026-10-18 10:14 pause:
-- The agent-benchmark session ran its untimed G2b probe on 8500 from 10:14:38 and released
-  the lock at 10:15:19. No lock is held. Nothing of ours runs: no server on 8700–8705, no
+- The agent-benchmark session ran untimed G2b probes on 8500: stock oMLX from 10:14:38 to
+  10:15:19, then its patched build from 10:21:10 to 10:26:56. No lock is held. Nothing of ours runs: no server on 8700–8705, no
   heartbeat, no monitor.
 - After resuming, local_ai-benchmark messages the agent-benchmark session before its next
   lock.
