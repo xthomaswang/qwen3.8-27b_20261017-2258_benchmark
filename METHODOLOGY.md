@@ -87,13 +87,16 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
     | GPU memory in use | 0.9–1.1 GB | 6 GB |
   - **During each suite,** a monitor samples every 10 s into
     `<framework>/raw/monitor-<tag>-<ts>.tsv`, which is committed with the results. The suite
-    counts as disturbed on either of these:
+    counts as disturbed on any of these, in a sample taken after the suite started (up to
+    one interval past its end):
     - a lock, port, power, thermal or build-tool event;
-    - foreign CPU over the limits above in two consecutive samples.
+    - the same foreign process above 25 % CPU in two consecutive samples;
+    - foreign CPU in total above 150 % in two consecutive samples.
 
-    A single over-limit sample, typically a macOS daemon blip, is logged as `SPIKE` and does
-    not count. Load average is logged but not judged, because the server under test adds to
-    it.
+    A one-sample blip is logged as `SPIKE` and does not count; on this machine one comes
+    roughly every minute (Watch sync, Spotlight, a WebKit page). `verify` re-judges every
+    suite from the logged reasons, so all suites get the same rule. Load average is logged
+    but not judged, because the server under test adds to it.
   - A disturbed suite is moved to `<framework>/raw/_unverified/` and repeated once
     automatically. That directory is gitignored and never published. The same applies to any
     run with a configuration doubt or a broken trial. Nothing from such a run is reported

@@ -13,12 +13,15 @@ Stdlib only; run with /usr/bin/python3 -I. Subcommands:
   monitor --log FILE [--interval S] [--allow-pid PID]... [--until-pid PID]
           Samples while a segment runs. Every sample is a TSV row in FILE; stdout gets one line
           per state change. Lock, port 8500, power, thermal and build tools mark a sample
-          DISTURBED at once. Busy processes and foreign CPU only count when they persist for two
-          consecutive samples (a one-sample daemon blip is logged as SPIKE). Load average is
-          logged but not judged, since the server under test adds to it.
+          DISTURBED at once. CPU counts only when it persists: the same foreign process above
+          the per-process limit in two consecutive samples, or foreign CPU in total above its
+          limit in two consecutive samples. A one-sample daemon blip is logged as SPIKE. Load
+          average is logged but not judged, since the server under test adds to it.
   verify  --log FILE --raw-dir DIR --since EPOCH [--move]
-          For each result file in DIR created at or after EPOCH, looks for DISTURBED samples,
-          or gaps in sampling, inside the file's time window (header `created` to mtime).
+          For each result file in DIR created at or after EPOCH, re-judges the logged samples
+          with the monitor's rule (from their reasons, so every suite gets the same rule) and
+          looks for disturbed samples, or gaps in sampling, inside the file's window: after its
+          header `created` and up to one interval past its mtime.
           --move sends those files, and their .md siblings, to DIR/_unverified/.
           Exit 1 if any file was disturbed.
 
@@ -272,17 +275,19 @@ def cmd_monitor(a: argparse.Namespace) -> int:
                 f"max_foreign_cpu={MAX_FOREIGN_CPU} allow={','.join(map(str, a.allow_pid))}\n")
         f.write("# iso\tepoch\tstate\tload1\tforeign_cpu\tgpu_util\tgpu_mem_gb\treasons\n")
         f.flush()
-        state, prev_cpu = None, False
+        state, prev_pids, prev_over = None, set(), False
         while True:
             if a.until_pid and not pid_alive(a.until_pid):
                 break
             s = sample(a.allow_pid)
             hard, soft = problems(s, judge_load=False)
             reasons = hard + soft
-            cpu = bool(s["busy"]) or s["foreign_cpu"] > MAX_FOREIGN_CPU   # may be a short daemon blip
+            pids = {p[0] for p in s["busy"]}
+            over = s["foreign_cpu"] > MAX_FOREIGN_CPU
             instant = bool(hard or s["tools"] or s["thermal"])
-            new = "DISTURBED" if instant or (cpu and prev_cpu) else ("SPIKE" if cpu else "QUIET")
-            prev_cpu = cpu
+            new = "DISTURBED" if instant or (pids & prev_pids) or (over and prev_over) \
+                else ("SPIKE" if (pids or over) else "QUIET")
+            prev_pids, prev_over = pids, over
             iso = dt.datetime.fromtimestamp(s["t"]).astimezone().isoformat(timespec="seconds")
             f.write(f"{iso}\t{s['t']:.1f}\t{new}\t{s['load1']:.2f}\t{s['foreign_cpu']:.1f}\t"
                     f"{s['gpu_util']}\t{s['gpu_mem_gb']}\t{tidy('; '.join(reasons))}\n")
@@ -319,8 +324,28 @@ def read_log(path: Path) -> tuple[float, list[tuple[float, str, str]]]:
     return interval, rows
 
 
+_BUSY = re.compile(r"([^\s,;]+)\((\d+)\) [\d.]+%")
+_INSTANT = ("lock not held", f"port {PEER_PORT}", "power:", "tools:", "thermal:")
+
+
+def judge(rows: list[tuple[float, str, str]]) -> list[tuple[float, bool, str]]:
+    """Re-judge logged samples from their reasons (the state column is informational).
+    Lock, port, power, tools and thermal count at once. CPU counts when the same foreign process
+    is busy in consecutive samples, or foreign CPU is over its limit in consecutive samples."""
+    out, prev_pids, prev_over = [], set(), False
+    for t, _state, reasons in rows:
+        segs = [x.strip() for x in reasons.split("; ") if x.strip()]
+        pids = {m.group(2) for x in segs if x.startswith("busy: ") for m in _BUSY.finditer(x)}
+        over = any(x.startswith("foreign CPU") for x in segs)
+        bad = any(x.startswith(_INSTANT) for x in segs) or bool(pids & prev_pids) or (over and prev_over)
+        out.append((t, bad, reasons))
+        prev_pids, prev_over = pids, over
+    return out
+
+
 def cmd_verify(a: argparse.Namespace) -> int:
     interval, rows = read_log(Path(a.log))
+    judged = judge(rows)
     raw = Path(a.raw_dir)
     bad = 0
     for f in sorted(raw.glob("*.jsonl")):
@@ -332,8 +357,8 @@ def cmd_verify(a: argparse.Namespace) -> int:
         if start < a.since - 1:
             continue
         end = f.stat().st_mtime
-        inside = [r for r in rows if start - interval <= r[0] <= end + interval]
-        disturbed = [r for r in inside if r[1] not in ("QUIET", "SPIKE")]
+        inside = [r for r in judged if start < r[0] <= end + interval]
+        disturbed = [r for r in inside if r[1]]
         edges = [start] + [r[0] for r in inside] + [end]
         gap = max((b - x for x, b in zip(edges, edges[1:])), default=0.0)
         why = None
