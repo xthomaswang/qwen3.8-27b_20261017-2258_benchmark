@@ -28,3 +28,6 @@ fixtures/real/
 # Generated binary/large fixtures (rebuild with `agentbench fixtures build`)
 fixtures/generated/
 .pytest_cache/
+
+# Timed runs that may have been disturbed (background load, thermal, config doubts) stay local
+**/raw/_unverified/

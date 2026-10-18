@@ -51,6 +51,19 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
      session's process.
   3. Run the segment.
   4. Delete the lock as soon as the segment ends.
+- **Quiet machine.** Published numbers come only from timed segments in which the machine was
+  quiet:
+  - `scripts/quiet_check.sh --allow-pid <server pid>` passes before the segment starts.
+    Its output (lock, port 8500, load average, busy foreign processes, build/convert/download
+    tools, thermal warnings, power) is stored with the raw data.
+  - No subagent work (compiles, conversions, fixture generation, test suites) and no
+    downloads run while a timed segment is in progress.
+  - A run that may have been disturbed (background load, a thermal warning, a configuration
+    doubt, a broken trial) is moved to `<framework>/raw/_unverified/`. That directory is
+    gitignored and never published. The run is repeated before any number is reported.
+- **Ordering.** When two frameworks are compared directly (e.g. Core AI vs MLX on the same
+  protocol), their runs alternate A/B/A/B after an idle cool-down, so drift such as
+  thermal throttling cannot favour either side.
 - **Ports.**
 
   | Framework | Port |
