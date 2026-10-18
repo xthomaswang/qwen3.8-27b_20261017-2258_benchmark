@@ -16,6 +16,11 @@
 #   otherwise starts on an idle machine on AC power. One held assertion is not enough: the
 #   daemons came back ~7 min after a single declaration. The one-off burst the first
 #   declaration triggers is absorbed by the settle below.
+# - Battery: this machine's 96 W adapter cannot supply it under sustained load, so the battery
+#   drains (~1 % per 2-3 min), and near 7 % the system caps power. Before the server starts and
+#   before each suite, the runner waits (server idle, charging) until the battery is at least
+#   QUIET_MIN_BATTERY % (default 40), for up to QUIET_BATTERY_WAIT_S (default 5400 s). A sample
+#   below 20 % during a suite marks it disturbed (quietlib.py, QUIET_MIN_BATTERY_RUN).
 # Per-suite extra arguments: SUITE_ARGS_<suite>, e.g. SUITE_ARGS_m7="--trials 1".
 # RUN_UNVERIFIED=1: a mechanics check. Everything goes to raw/_unverified/, summary.md is untouched,
 #   quiet checks are reported but never block (short waits), and nothing is repeated.
@@ -24,8 +29,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 [ $# -ge 6 ] || { sed -n 2,5p "$0"; exit 2; }
 fw=$1 variant=$2 tier=$3 profile=$4 tag=$5 suites=$6; shift 6
 UNV=${RUN_UNVERIFIED:-0}
-if [ "$UNV" = 1 ]; then WAIT_S=${QUIET_WAIT_S:-20} PRE_S=20 HP_S=10 RETRIES=0
-else WAIT_S=${QUIET_WAIT_S:-600} PRE_S=${QUIET_PRESERVE_S:-300} HP_S=60 RETRIES=${QUIET_RETRIES:-1}; fi
+if [ "$UNV" = 1 ]; then WAIT_S=${QUIET_WAIT_S:-20} PRE_S=20 HP_S=10 RETRIES=0 BATT_WAIT_S=0
+else WAIT_S=${QUIET_WAIT_S:-600} PRE_S=${QUIET_PRESERVE_S:-300} HP_S=60 RETRIES=${QUIET_RETRIES:-1}
+  BATT_WAIT_S=${QUIET_BATTERY_WAIT_S:-5400}; fi
+MIN_BATT=${QUIET_MIN_BATTERY:-40}
 PY=/usr/bin/python3
 ts() { date '+%T'; }
 grep -q '^holder: local_ai-benchmark session' "$HOME/Developer/mlsys/experiments/.gpu-lock" 2>/dev/null \
@@ -40,8 +47,11 @@ vdir="$raw" unv_arg="" move_arg="--move"
 echo "$(ts) run_framework: $fw $variant $tier, tag $tag, suites $suites"
 ( while kill -0 $$ 2>/dev/null; do caffeinate -u -t 1; sleep 60; done ) > /dev/null 2>&1 &
 sleep "${USER_ACTIVE_SETTLE_S:-45}"   # declaring activity sets off a ~30 s "user returned" burst; let it pass
-# Before loading anything: the GPU must be idle with no other model resident.
-if ! scripts/quiet_check.sh --allow-pid $$ --settle "$PRE_S" --max-gpu-gb "${QUIET_MAX_GPU_GB_IDLE:-6}" > "logs/quiet-$fw-$tag.preserve" 2>&1; then
+# Before loading anything: the battery must be charged enough, and the GPU idle with no other model resident.
+if ! "$PY" -I scripts/quietlib.py battery --min "$MIN_BATT" --wait "$BATT_WAIT_S"; then
+  [ "$UNV" = 1 ] || { echo "$(ts) battery below ${MIN_BATT}% after ${BATT_WAIT_S}s; nothing started"; exit 6; }
+fi
+if ! scripts/quiet_check.sh --allow-pid $$ --settle "$PRE_S" --max-gpu-gb "${QUIET_MAX_GPU_GB_IDLE:-6}" --min-battery "$MIN_BATT" > "logs/quiet-$fw-$tag.preserve" 2>&1; then
   echo "$(ts) machine not quiet before serving:"; sed 's/^/  /' "logs/quiet-$fw-$tag.preserve"
   [ "$UNV" = 1 ] || { echo "$(ts) nothing started"; exit 6; }
 fi
@@ -76,7 +86,12 @@ for s in $(printf '%s' "$suites" | tr ',' ' '); do
     attempt=$((attempt + 1))
     kill -0 "$pid" 2>/dev/null || { echo "$(ts) server $pid is gone; stopping before $s"; rc=1; break 2; }
     kill -0 "$mon" 2>/dev/null || { echo "$(ts) monitor had exited (see $events); restarted"; start_monitor; sleep 11; }
-    if ! scripts/quiet_check.sh --allow-pid $$ --settle "$WAIT_S" > "logs/quiet-$fw-$tag.last" 2>&1; then
+    if ! bout=$("$PY" -I scripts/quietlib.py battery --min "$MIN_BATT" --wait "$BATT_WAIT_S"); then
+      echo "$(ts) $bout"
+      [ "$UNV" = 1 ] || { echo "$(ts) stopping before $s"; rc=1; break 2; }
+    fi
+    case $bout in *waiting*) echo "$(ts) charged before $s: $(printf '%s\n' "$bout" | tail -1)" ;; esac
+    if ! scripts/quiet_check.sh --allow-pid $$ --settle "$WAIT_S" --min-battery "$MIN_BATT" > "logs/quiet-$fw-$tag.last" 2>&1; then
       echo "$(ts) not quiet after ${WAIT_S}s before $s. Last check:"; sed 's/^/  /' "logs/quiet-$fw-$tag.last"
       [ "$UNV" = 1 ] || { echo "$(ts) stopping"; rc=1; break 2; }
     fi
@@ -86,7 +101,7 @@ for s in $(printf '%s' "$suites" | tr ',' ' '); do
     (cd harness && uv run agentbench run-all --profile "$profile" --base-url "$base" --model "$model" \
       --framework "$fw" --framework-version "$version" --launch-flags "$flags" --tag "$tag" \
       --server-pid "$pid" --suites "$s" --preflight \
-      --preflight-cmd "$ROOT/scripts/quiet_check.sh --settle $HP_S --allow-pid $$" $unv_arg "$@" $sargs) > "logs/run-$fw-$tag-$s.log" 2>&1
+      --preflight-cmd "$ROOT/scripts/quiet_check.sh --settle $HP_S --allow-pid $$ --min-battery $MIN_BATT" $unv_arg "$@" $sargs) > "logs/run-$fw-$tag-$s.log" 2>&1
     src=$?
     grep -E "^(preflight|.* failed:)" "logs/run-$fw-$tag-$s.log" | sed 's/^/  /'
     sleep 11   # let the monitor take one more sample after the suite's last write

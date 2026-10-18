@@ -85,7 +85,31 @@ def test_cap_truncated_streams_count_as_latency_samples():
     assert rows["1"][2].strip() == "1" and rows["1"][-2].strip() == "0"  # counted, not an error
     assert rows["3"][2].strip() == "0" and rows["3"][-2].strip() == "1"  # a real error stays an error
     assert "slope over steps 1-3: 0.5000 s/step" in md
+    assert "(steps 2-3: - s/step)" in md  # one point left: no slope
     assert "1 of 4 requests ended at the token cap" in md
+
+
+def test_m4_slope_with_and_without_step_1():
+    """oMLX's prefix cache does not reuse the step-0 prompt at step 1, so step 1 is a near-full
+    re-prefill (~17.9 s against ~3.7 s from step 2 on) that skews the slope over steps 1-N. The
+    summary also gives the slope over steps 2-N."""
+    from agentbench.summarize import s_m4
+
+    def line(step, ttft, err=None):
+        ok = err is None
+        return {"type": "request", "phase": "start" if step == 0 else "step", "step": step, "run": 0,
+                "metrics": {"ok": ok, "error": err, "ttft_s": ttft, "e2e_s": None if ttft is None else ttft + 5.0,
+                            "cached_tokens": 90 if ok else None, "prompt_tokens": 100 if ok else None,
+                            "prompt_tokens_local": 100}}
+
+    trunc = "stream_error: {'code': 'incomplete_tool_call'}"
+    # steps 2, 3, 5, 6 lie on 3 + 0.5 k; step 0 (cold start) and step 4 (no latency sample) are left out
+    lines = [line(0, 25.0), line(1, 18.0), line(2, 4.0), line(3, 4.5, trunc), line(4, None, "HTTP 500: boom"),
+             line(5, 5.5), line(6, 6.0)]
+    md = s_m4([{"lines": lines}])
+    assert "TTFT slope over steps 1-6: -1.5233 s/step (steps 2-6: 0.5000 s/step); total e2e" in md
+    md = s_m4([{"lines": lines[:2]}])  # no step 2: no second slope
+    assert "TTFT slope over steps 1-1: - s/step; total e2e" in md
 
 
 def test_capabilities_md_follows_verified_gate_runs(run_dir, tmp_path):

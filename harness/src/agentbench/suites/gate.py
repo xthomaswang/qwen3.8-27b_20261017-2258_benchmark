@@ -36,6 +36,8 @@ SHOT_ASK = ("Take a screenshot with the computer_screenshot tool. The screen sho
 SHOT_OK = "Screenshot captured (1280x1024)."
 SHOT_ID = "call_g2b_screenshot"
 DROP_TOKENS = 600  # an image is ~1.3K prompt tokens; a smaller gap is noise
+ANTHROPIC_INPUT = (("input_tokens", "input_tokens"), ("cache_creation_input_tokens", "cache_creation"),
+                   ("cache_read_input_tokens", "cache_read"))  # disjoint usage fields, summed to the prompt size
 
 
 def _alnum(s: str) -> str:
@@ -70,6 +72,21 @@ def _http(o: Outcome) -> str:
     if o.rec.error:
         return o.rec.error.get("type", "error")
     return f"HTTP {o.rec.http_status}"
+
+
+def _anthropic_prompt(rec) -> tuple[int | None, str]:
+    """Prompt size of a /v1/messages request and how it was reported. Anthropic usage splits the
+    prompt into three disjoint fields, so the prompt is their sum (a missing field counts as 0):
+    with `cache_control` oMLX reports input_tokens 0 and the rest as cache_creation/cache_read,
+    and llama.cpp and vLLM leave prefix-cache hits out of input_tokens. `usage_raw` is already
+    the final usage (message_delta fields over message_start). None when no field is reported."""
+    u = rec.usage_raw or {}
+    if not any(isinstance(u.get(k), (int, float)) for k, _ in ANTHROPIC_INPUT):
+        return None, "input_tokens=None"
+    n = {k: int(u[k]) if isinstance(u.get(k), (int, float)) else 0 for k, _ in ANTHROPIC_INPUT}
+    total = sum(n.values())
+    split = [f"+{label} {n[k]}" for k, label in ANTHROPIC_INPUT[1:] if n[k]]
+    return total, f"input_tokens={n['input_tokens']}" + ("".join(split) + f" (sum {total})" if split else "")
 
 
 class Gate:
@@ -315,9 +332,11 @@ class Gate:
         c = await self.t.anthropic(self.cc_body([ask(), use, control], "You are a helpful assistant.", tools=tools))
         tr_ok, what = self.read_code(o)
         cok, cwhat = self.read_code(c)
-        _, note = self.drop_note(o.rec.prompt_tokens, c.rec.prompt_tokens)
-        what += f"; input_tokens={o.rec.prompt_tokens}" + note
-        cwhat += f"; input_tokens={c.rec.prompt_tokens}"
+        # compare whole prompts: input_tokens alone misses the cache fields (see _anthropic_prompt)
+        (pt, pt_text), (pt_ctrl, ctrl_text) = _anthropic_prompt(o.rec), _anthropic_prompt(c.rec)
+        dropped, note = self.drop_note(pt, pt_ctrl)
+        what += f"; {pt_text}" + note
+        cwhat += f"; {ctrl_text}"
         self.record("G3.tool_result-image", "Claude Code, screenshot as image block inside tool_result", o, what, tr_ok)
         self.record("G3.tool_result-control", "Claude Code, same image after the tool_result (control)", c, cwhat, cok)
         sub.append({"probe": "G3.tool_result-image", "ok": tr_ok, "outcome": what})
@@ -331,7 +350,7 @@ class Gate:
         thinking_notes = [s["outcome"] for s in sub if s["probe"].startswith("G3.text") and s["ok"]]
         if thinking_notes:
             detail += "; " + " / ".join(thinking_notes)
-        self.item("G3", res, detail, sub)
+        self.item("G3", res, detail, sub, dropped=dropped)
 
     # -------------------------------------------------------------------- G4
     async def g4(self) -> None:

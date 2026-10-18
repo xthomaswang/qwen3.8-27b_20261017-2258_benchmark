@@ -29,6 +29,8 @@ class Behavior:
     reasoning_field: str = "reasoning_content"  # reasoning_content | reasoning | inline
     images: bool = True
     tool_images: bool = True  # stock oMLX 0.7.1rc1 drops image_url parts of role=tool messages (OpenAI API)
+    tool_result_images: bool = True  # False drops image blocks inside Anthropic tool_result blocks (test knob)
+    split_usage: bool = False  # oMLX /v1/messages: with cache_control, input_tokens 0 and the prompt in the cache fields
     image_reject_status: int = 400
     image_reject_message: str = "image input is not supported"
     anthropic: bool = True
@@ -53,7 +55,7 @@ class Behavior:
 BEHAVIORS: dict[str, Behavior] = {
     "generic": Behavior(),
     "llamacpp": Behavior(name="llamacpp", cached_report="timings"),
-    "omlx": Behavior(name="omlx", effort_mode="alias", tool_call_style="single", tool_images=False),
+    "omlx": Behavior(name="omlx", effort_mode="alias", tool_call_style="single", tool_images=False, split_usage=True),
     "vllm": Behavior(name="vllm", reasoning_field="reasoning"),
     "lithos": Behavior(name="lithos", images=False, strict_fields=LITHOS_FIELDS, effort_mode="forbid", can_think=False,
                        default_thinking=False, anthropic_thinking_allowed=("disabled",), busy_429=True,
@@ -106,6 +108,21 @@ def _n_images(content: Any) -> int:
 def _drop_tool_images(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [dict(m, content=[p for p in m["content"] if not (isinstance(p, dict) and p.get("type") == "image_url")])
             if m.get("role") == "tool" and isinstance(m.get("content"), list) else m for m in msgs]
+
+
+def _drop_tool_result_images(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def strip(p: Any) -> Any:
+        if isinstance(p, dict) and p.get("type") == "tool_result" and isinstance(p.get("content"), list):
+            return dict(p, content=[q for q in p["content"] if not (isinstance(q, dict) and q.get("type") == "image")])
+        return p
+    return [dict(m, content=[strip(p) for p in m["content"]]) if isinstance(m.get("content"), list) else m for m in msgs]
+
+
+def _has_cache_control(body: dict[str, Any]) -> bool:
+    """A system, tool or message content block carries cache_control (oMLX `request_has_cache_control`)."""
+    blocks = (body.get("system") if isinstance(body.get("system"), list) else []) + list(body.get("tools") or [])
+    blocks += [p for m in body.get("messages") or [] if isinstance(m.get("content"), list) for p in m["content"]]
+    return any(isinstance(p, dict) and p.get("cache_control") for p in blocks)
 
 
 def _turn_images(msgs: list[dict[str, Any]]) -> int:
@@ -425,19 +442,29 @@ class SmartResponder:
         if any(_n_images(m.get("content")) for m in msgs) and not b.images:
             return "json", 400, {"type": "error", "error": {"type": "invalid_request_error",
                                                             "message": "Unsupported Messages content block: image"}}
+        if not b.tool_result_images:
+            msgs = _drop_tool_result_images(msgs)
         thinking = (th == "enabled") or (th in (None, "adaptive") and b.default_thinking and b.can_think)
         last_user = next((m.get("content") for m in reversed(msgs) if m.get("role") == "user"), "")
         plan = self._answer(last_user, bool(body.get("tools")), thinking, question=_user_text(msgs))
         total, cached = self._prompt_cache([body.get("tools"), body.get("system")] + msgs)
-        return "sse", self._anthropic_stream(plan, total, cached, body["max_tokens"])
+        return "sse", self._anthropic_stream(plan, total, cached, body["max_tokens"], _has_cache_control(body))
 
-    async def _anthropic_stream(self, plan: Plan, total: int, cached: int, max_tokens: int) -> AsyncIterator[str]:
+    async def _anthropic_stream(self, plan: Plan, total: int, cached: int, max_tokens: int,
+                                cache_control: bool = False) -> AsyncIterator[str]:
         b = self.b
         self.in_flight += 1
         try:
-            usage = {"input_tokens": total, "output_tokens": 1}
-            if b.cached_report in ("usage", "timings"):
-                usage["cache_read_input_tokens"] = cached
+            # Anthropic usage is disjoint: input_tokens + cache_creation + cache_read = prompt
+            final: dict[str, Any] = {}
+            if b.split_usage:  # oMLX: the real numbers come in message_delta; the cache fields only with cache_control
+                usage: dict[str, Any] = {"input_tokens": 0 if cache_control else total, "output_tokens": 0}
+                final = ({"input_tokens": 0, "cache_creation_input_tokens": total - cached,
+                          "cache_read_input_tokens": cached} if cache_control else {"input_tokens": total})
+            else:
+                usage = {"input_tokens": total, "output_tokens": 1}
+                if b.cached_report in ("usage", "timings"):  # as llama.cpp: input_tokens leaves out the cache hits
+                    usage.update(input_tokens=total - cached, cache_read_input_tokens=cached)
             yield _sse({"type": "message_start", "message": {"id": "msg_mock", "role": "assistant", "content": [],
                                                               "usage": usage}}, "message_start")
             yield _sse({"type": "ping"}, "ping")
@@ -482,7 +509,8 @@ class SmartResponder:
                 if sent < len(plan.text):
                     stop = "max_tokens"
                 yield _sse({"type": "content_block_stop", "index": idx}, "content_block_stop")
-            yield _sse({"type": "message_delta", "delta": {"stop_reason": stop}, "usage": {"output_tokens": n}}, "message_delta")
+            yield _sse({"type": "message_delta", "delta": {"stop_reason": stop}, "usage": {"output_tokens": n, **final}},
+                       "message_delta")
             self._log(cached, n)
             yield _sse({"type": "message_stop"}, "message_stop")
         finally:

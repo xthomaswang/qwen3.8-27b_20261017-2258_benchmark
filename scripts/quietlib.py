@@ -9,14 +9,21 @@ Stdlib only; run with /usr/bin/python3 -I. Subcommands:
           busy, busy processes, build tools, thermal) are re-checked every 5 s for up to S
           seconds. Hard failures (lock, port 8500, power) fail at once. --max-gpu-gb (used
           before a server starts) also fails while more than G GB of GPU memory is in use,
-          i.e. while another model is resident.
+          i.e. while another model is resident. --min-battery fails while the battery is below
+          PCT %.
   monitor --log FILE [--interval S] [--allow-pid PID]... [--until-pid PID]
           Samples while a segment runs. Every sample is a TSV row in FILE; stdout gets one line
           per state change. Lock, port 8500, power, thermal and build tools mark a sample
           DISTURBED at once. CPU counts only when it persists: the same foreign process above
           the per-process limit in two consecutive samples, or foreign CPU in total above its
           limit in two consecutive samples. A one-sample daemon blip is logged as SPIKE. Load
-          average is logged but not judged, since the server under test adds to it.
+          average is logged but not judged, since the server under test adds to it. A battery
+          below QUIET_MIN_BATTERY_RUN % also marks a sample DISTURBED at once. The battery
+          level and the thermal pressure level are logged in every row; thermal pressure is
+          not judged, since the run itself produces it.
+  battery --min PCT [--wait S]
+          Waits up to S seconds (default 0) for the battery to reach PCT %, printing the level
+          every 5 min. Exit 1 if it does not. Machines without a battery always pass.
   verify  --log FILE --raw-dir DIR --since EPOCH [--move]
           For each result file in DIR created at or after EPOCH, re-judges the logged samples
           with the monitor's rule (from their reasons, so every suite gets the same rule) and
@@ -32,7 +39,9 @@ Thresholds (environment): QUIET_MAX_LOAD (1-min load, check only, default 2.5),
 QUIET_MAX_PROC_CPU (any single foreign process, default 25 %), QUIET_MAX_FOREIGN_CPU
 (sum over foreign processes, default 150 %), QUIET_MAX_GPU (GPU "Device Utilization %"
 while our server is idle, check only, default 10 %). GPU figures come from the
-AGXAccelerator PerformanceStatistics in ioreg (no sudo).
+AGXAccelerator PerformanceStatistics in ioreg (no sudo). QUIET_MIN_BATTERY_RUN (default
+20 %): the 96 W adapter cannot supply this machine under sustained load, so the battery
+drains, and below ~7 % the system caps power (decode fell 22 % on 2026-10-18 at 05:16).
 """
 from __future__ import annotations
 
@@ -54,6 +63,8 @@ MAX_LOAD = float(os.environ.get("QUIET_MAX_LOAD", "2.5"))
 MAX_PROC_CPU = float(os.environ.get("QUIET_MAX_PROC_CPU", "25"))
 MAX_FOREIGN_CPU = float(os.environ.get("QUIET_MAX_FOREIGN_CPU", "150"))
 MAX_GPU = float(os.environ.get("QUIET_MAX_GPU", "10"))
+MIN_BATTERY_RUN = float(os.environ.get("QUIET_MIN_BATTERY_RUN", "20"))
+TPL_NAMES = {0: "nominal", 1: "moderate", 2: "heavy", 3: "trapping", 4: "sleeping"}   # OSThermalNotification.h
 IGNORED = {"WindowServer", "kernel_task"}  # always resident; kernel_task also does the server's driver work
 BUILD_NAMES = {"clang", "clang++", "cc1", "cc1plus", "ld", "ld64", "ninja", "make", "gmake", "cmake",
                "swift-frontend", "swiftc", "rustc", "cargo", "xcodebuild"}
@@ -155,6 +166,24 @@ def power() -> tuple[bool, str]:
     return ok, f"{src_s}; powermode {mode_s}" + (" (High Power)" if mode_s == "2" else "")
 
 
+def battery() -> tuple[int, str]:
+    """(percent, pmset state such as 'charging' or 'discharging'); (-1, 'none') without a battery."""
+    _, out = run(["pmset", "-g", "batt"])
+    m = re.search(r"\t(\d+)%;\s*([^;]+);", out)
+    return (int(m.group(1)), m.group(2).strip()) if m else (-1, "none")
+
+
+def thermal_pressure() -> int:
+    """System thermal pressure level (0 nominal .. 4 sleeping); -1 if unavailable."""
+    _, out = run(["notifyutil", "-g", "com.apple.system.thermalpressurelevel"])
+    m = re.search(r"(\d+)\s*$", out.strip())
+    return int(m.group(1)) if m else -1
+
+
+def tpl_text(level: int) -> str:
+    return f"{level} ({TPL_NAMES.get(level, 'unknown')})" if level >= 0 else "unavailable"
+
+
 def sample(allow: list[int]) -> dict:
     """One snapshot of everything the quiet rule looks at."""
     procs = processes()
@@ -182,18 +211,22 @@ def sample(allow: list[int]) -> dict:
         load1 = -1.0
     pwr_ok, pwr = power()
     g_util, g_mem = gpu()
+    batt, batt_state = battery()
     return {"t": time.time(), "lock": lock_purpose(), "peer_port": peer_port_up(), "load1": load1,
             "gpu_util": g_util, "gpu_mem_gb": g_mem,
             "foreign_cpu": round(sum(p[1] for p in foreign), 1), "busy": busy, "top": top, "tools": tools,
-            "thermal": thermal_warnings(), "power_ok": pwr_ok, "power": pwr}
+            "thermal": thermal_warnings(), "power_ok": pwr_ok, "power": pwr,
+            "battery": batt, "battery_state": batt_state, "tpl": thermal_pressure()}
 
 
 def name(comm: str) -> str:
     return os.path.basename(comm)
 
 
-def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None) -> tuple[list[str], list[str]]:
-    """(hard, soft) failure reasons for a sample. Hard: lock, port, power. Soft: the rest."""
+def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None,
+             min_battery: float | None = None) -> tuple[list[str], list[str]]:
+    """(hard, soft) failure reasons for a sample. Hard: lock, port, power, a battery below the
+    run limit. Soft: the rest, including a battery below min_battery (check only)."""
     hard, soft = [], []
     if s["lock"] is None:
         hard.append("lock not held by us")
@@ -201,6 +234,10 @@ def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None) -> tupl
         hard.append(f"port {PEER_PORT} listening")
     if not s["power_ok"]:
         hard.append(f"power: {s['power']}")
+    if 0 <= s["battery"] < MIN_BATTERY_RUN:
+        hard.append(f"battery: {s['battery']}% < {MIN_BATTERY_RUN:.0f}%")
+    elif min_battery is not None and 0 <= s["battery"] < min_battery:
+        soft.append(f"battery {s['battery']}% < {min_battery:.0f}% (charging)")
     if judge_load and s["load1"] > MAX_LOAD:
         soft.append(f"load1 {s['load1']:.2f} > {MAX_LOAD}")
     if judge_load and s["gpu_util"] > MAX_GPU:   # judge_load: our server is idle, so the GPU should be too
@@ -239,6 +276,8 @@ def report(s: dict, settle_note: str | None, verdict: bool) -> str:
         lines.append("build/convert/download tools: none")
     lines.append("thermal: " + ("; ".join(s["thermal"]) if s["thermal"] else "no warning recorded"))
     lines.append(f"power: {s['power']}")
+    lines.append("battery: " + (f"{s['battery']}% ({s['battery_state']})" if s["battery"] >= 0 else "none"))
+    lines.append(f"thermal pressure: {tpl_text(s['tpl'])}")
     if settle_note:
         lines.append(settle_note)
     lines.append("verdict: QUIET" if verdict else "verdict: NOT QUIET")
@@ -249,7 +288,7 @@ def cmd_check(a: argparse.Namespace) -> int:
     t0 = time.time()
     while True:
         s = sample(a.allow_pid)
-        hard, soft = problems(s, judge_load=True, max_gpu_gb=a.max_gpu_gb)
+        hard, soft = problems(s, judge_load=True, max_gpu_gb=a.max_gpu_gb, min_battery=a.min_battery)
         waited = time.time() - t0
         if hard or not soft or waited + SETTLE_STEP > a.settle:
             break
@@ -271,9 +310,10 @@ def cmd_monitor(a: argparse.Namespace) -> int:
     log = Path(a.log)
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a", encoding="utf-8") as f:
-        f.write(f"# quietlib monitor v2 interval={a.interval} max_proc_cpu={MAX_PROC_CPU} "
-                f"max_foreign_cpu={MAX_FOREIGN_CPU} allow={','.join(map(str, a.allow_pid))}\n")
-        f.write("# iso\tepoch\tstate\tload1\tforeign_cpu\tgpu_util\tgpu_mem_gb\treasons\n")
+        f.write(f"# quietlib monitor v3 interval={a.interval} max_proc_cpu={MAX_PROC_CPU} "
+                f"max_foreign_cpu={MAX_FOREIGN_CPU} min_battery_run={MIN_BATTERY_RUN} "
+                f"allow={','.join(map(str, a.allow_pid))}\n")
+        f.write("# iso\tepoch\tstate\tload1\tforeign_cpu\tgpu_util\tgpu_mem_gb\tbattery\tthermal_pressure\treasons\n")
         f.flush()
         state, prev_pids, prev_over = None, set(), False
         while True:
@@ -290,7 +330,7 @@ def cmd_monitor(a: argparse.Namespace) -> int:
             prev_pids, prev_over = pids, over
             iso = dt.datetime.fromtimestamp(s["t"]).astimezone().isoformat(timespec="seconds")
             f.write(f"{iso}\t{s['t']:.1f}\t{new}\t{s['load1']:.2f}\t{s['foreign_cpu']:.1f}\t"
-                    f"{s['gpu_util']}\t{s['gpu_mem_gb']}\t{tidy('; '.join(reasons))}\n")
+                    f"{s['gpu_util']}\t{s['gpu_mem_gb']}\t{s['battery']}\t{s['tpl']}\t{tidy('; '.join(reasons))}\n")
             f.flush()
             if new != state:
                 print(f"{iso[11:19]} {new}" + (f": {tidy('; '.join(reasons))}" if reasons else ""), flush=True)
@@ -325,12 +365,12 @@ def read_log(path: Path) -> tuple[float, list[tuple[float, str, str]]]:
 
 
 _BUSY = re.compile(r"([^\s,;]+)\((\d+)\) [\d.]+%")
-_INSTANT = ("lock not held", f"port {PEER_PORT}", "power:", "tools:", "thermal:")
+_INSTANT = ("lock not held", f"port {PEER_PORT}", "power:", "battery:", "tools:", "thermal:")
 
 
 def judge(rows: list[tuple[float, str, str]]) -> list[tuple[float, bool, str]]:
     """Re-judge logged samples from their reasons (the state column is informational).
-    Lock, port, power, tools and thermal count at once. CPU counts when the same foreign process
+    Lock, port, power, battery, tools and thermal count at once. CPU counts when the same foreign process
     is busy in consecutive samples, or foreign CPU is over its limit in consecutive samples."""
     out, prev_pids, prev_over = [], set(), False
     for t, _state, reasons in rows:
@@ -382,6 +422,23 @@ def cmd_verify(a: argparse.Namespace) -> int:
     return 1 if bad else 0
 
 
+def cmd_battery(a: argparse.Namespace) -> int:
+    t0, last = time.time(), -1e9
+    while True:
+        pct, state = battery()
+        if pct < 0 or pct >= a.min:
+            print(f"battery: {'none' if pct < 0 else f'{pct}% ({state})'}; ok (min {a.min:.0f}%)", flush=True)
+            return 0
+        waited = time.time() - t0
+        if waited >= a.wait:
+            print(f"battery: {pct}% ({state}) < {a.min:.0f}% after {waited:.0f} s", flush=True)
+            return 1
+        if time.time() - last >= 300:
+            print(f"battery: {pct}% ({state}) < {a.min:.0f}%; waiting ({waited:.0f}/{a.wait:.0f} s)", flush=True)
+            last = time.time()
+        time.sleep(min(30.0, max(1.0, a.wait - waited)))
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="quietlib", description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -389,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--allow-pid", type=int, action="append", default=[])
     c.add_argument("--settle", type=float, default=0.0)
     c.add_argument("--max-gpu-gb", type=float)
+    c.add_argument("--min-battery", type=float)
     m = sub.add_parser("monitor")
     m.add_argument("--log", required=True)
     m.add_argument("--interval", type=float, default=10.0)
@@ -399,8 +457,11 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--raw-dir", required=True)
     v.add_argument("--since", type=float, required=True)
     v.add_argument("--move", action="store_true")
+    b = sub.add_parser("battery")
+    b.add_argument("--min", type=float, required=True)
+    b.add_argument("--wait", type=float, default=0.0)
     a = p.parse_args(argv)
-    return {"check": cmd_check, "monitor": cmd_monitor, "verify": cmd_verify}[a.cmd](a)
+    return {"check": cmd_check, "monitor": cmd_monitor, "verify": cmd_verify, "battery": cmd_battery}[a.cmd](a)
 
 
 if __name__ == "__main__":

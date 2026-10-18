@@ -82,12 +82,36 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
     - The first declaration triggers a short "user returned" burst of about 30 s (Spotlight,
       widgets). The runner waits 45 s before its first check to absorb it.
     - Every framework runs under the same heartbeat.
-  - **Before the server starts.** The GPU is idle, and no other model is resident: at most
-    6 GB of GPU memory is in use.
+  - **Battery.** The machine runs on a 96 W USB-C adapter, which cannot supply it under
+    sustained GPU load. Even on AC the battery drains, by about 1 % every 2–3 min.
+    - **What happened on 2026-10-18.** Back-to-back timed runs by two sessions from 02:17
+      took the battery from 95 % to 6 % by 05:15, and it stayed at 6–14 % until 08:40.
+      Near 6–7 % the system capped power:
+      - llama.cpp decode fell by 22 % within a minute (05:16);
+      - vLLM-Metal's 64K cold prefill took 187 s at 07:56–08:11, against 163 s at full
+        charge.
+
+      `pmset -g therm` showed nothing.
+    - **The rule.** Before the server starts and before each suite, the runner waits, with
+      the server idle and charging, until the battery is at least 40 %. A monitor sample
+      below 20 % marks the suite disturbed. Starting at 40 % keeps even the longest suite
+      (about 15 % of drain) above 20 %.
+    - **Calibration.** llama.cpp M1 gave the same result at 29 % (04:35) as at 96 % (17:37),
+      within 1 %. Above about 30 %, the battery level does not matter.
+    - **Logged in every monitor row:** the battery level, and the system thermal pressure
+      level (`notifyutil -g com.apple.system.thermalpressurelevel`: 0 nominal, 1 moderate,
+      2 heavy, 3 trapping, 4 sleeping). Thermal pressure is logged but not judged. Sustained
+      runs reach level 2 on every framework, at full charge too, because the run itself
+      produces the heat.
+    - **Re-runs.** Suites measured on 2026-10-18 with the battery below 30 % were moved to
+      `raw/_unverified/` and re-run under this rule. M7 was kept, since it checks
+      correctness and reports no timing.
+  - **Before the server starts.** The battery is at least 40 %, the GPU is idle, and no
+    other model is resident: at most 6 GB of GPU memory is in use.
   - **Before each suite,** with the server idle, `scripts/quiet_check.sh` must pass. The
     runner waits up to 10 min for it. Criteria:
     - our GPU lock is held, port 8500 is down, and the machine is on AC power in High Power
-      mode;
+      mode, with the battery at 40 % or more;
     - 1-min load average ≤ 2.5, and GPU utilization ≤ 10 %;
     - no foreign process above 25 % CPU, and foreign CPU in total ≤ 150 %;
     - no build, convert or download tools running, and no thermal warning.
@@ -106,7 +130,7 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
     `<framework>/raw/monitor-<tag>-<ts>.tsv`, which is committed with the results. The suite
     counts as disturbed on any of these, in a sample taken after the suite started (up to
     one interval past its end):
-    - a lock, port, power, thermal or build-tool event;
+    - a lock, port, power, thermal or build-tool event, or the battery below 20 %;
     - the same foreign process above 25 % CPU in two consecutive samples;
     - foreign CPU in total above 150 % in two consecutive samples.
 

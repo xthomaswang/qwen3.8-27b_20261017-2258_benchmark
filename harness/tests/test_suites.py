@@ -210,17 +210,62 @@ def test_preflight_failure_routes_to_unverified(built, generic, tmp_path):
 
 
 def test_gate_g2b_flags_images_dropped_from_tool_messages(built, tmp_path):
-    """The omlx mock drops image_url parts of role=tool messages, as stock oMLX 0.7.1rc1 does."""
+    """The omlx mock drops image_url parts of role=tool messages, as stock oMLX 0.7.1rc1 does, and
+    splits Anthropic usage like it: input_tokens 0, the prompt in the cache fields."""
     root, _ = built
     srv, _ = start_mock(root, "omlx")
     try:
         assert main(["gate"] + cli_args(srv.url, root, tmp_path, "omlx", "omlx")) == 0
     finally:
         srv.stop()
-    summary = read(next((tmp_path / "omlx" / "raw").glob("gate-*.jsonl")))[-1]
+    lines = read(next((tmp_path / "omlx" / "raw").glob("gate-*.jsonl")))
+    summary = lines[-1]
     g2b = summary["items"]["G2b"]
     assert g2b["result"] == "FAIL" and g2b["dropped"] and "image dropped" in g2b["detail"], g2b
     assert summary["items"]["G2"]["result"] == "PASS"
     probes = {x["probe"]: x for x in summary["probes"]}
     assert probes["G2b.user-control"]["ok"] and not probes["G2b.tool-image"]["ok"]
     assert probes["G3.tool_result-image"]["ok"] and probes["G3.tool_result-control"]["ok"]
+    # the image is counted in the cache fields, so the summed sizes match and no drop is flagged
+    for x in lines:
+        if x.get("probe") in ("G3.tool_result-image", "G3.tool_result-control"):
+            u = x["record"]["usage_raw"]
+            assert u["input_tokens"] == 0 and u["cache_creation_input_tokens"] > 1282, u
+            total = u["cache_creation_input_tokens"] + u["cache_read_input_tokens"]
+            assert "input_tokens=0+cache_creation" in x["judgement"]["outcome"] and f"(sum {total})" in x["judgement"]["outcome"]
+    assert not summary["items"]["G3"]["dropped"] and "image dropped" not in probes["G3.tool_result-image"]["outcome"]
+
+
+def test_gate_g3_drop_check_sums_split_anthropic_usage(built, tmp_path):
+    """Both G3 probes report input_tokens=0 (oMLX with cache_control); the drop shows only in the sum."""
+    root, _ = built
+    srv, _ = start_mock(root, "omlx", tool_result_images=False)
+    try:
+        assert main(["gate"] + cli_args(srv.url, root, tmp_path, "omlx", "omlx")) == 0
+    finally:
+        srv.stop()
+    lines = read(next((tmp_path / "omlx" / "raw").glob("gate-*.jsonl")))
+    g3 = lines[-1]["items"]["G3"]
+    probes = {x["probe"]: x for x in lines[-1]["probes"]}
+    img, ctrl = probes["G3.tool_result-image"], probes["G3.tool_result-control"]
+    assert g3["result"] == "FAIL" and g3["dropped"] and not img["ok"] and ctrl["ok"], g3
+    assert "input_tokens=0+cache_creation" in img["outcome"] and "image dropped" in img["outcome"], img
+    assert all(x["record"]["usage_raw"]["input_tokens"] == 0 for x in lines if x.get("probe") in (img["probe"], ctrl["probe"]))
+
+
+def test_anthropic_prompt_sums_the_usage_split():
+    from agentbench.client import RequestRecord
+    from agentbench.suites.gate import Gate, _anthropic_prompt
+
+    def size(usage):
+        return _anthropic_prompt(RequestRecord(api="anthropic", url="", usage_raw=usage))
+
+    # G3 tool_result records from the oMLX and llama.cpp gate runs of 2026-10-18
+    omlx = size({"input_tokens": 0, "output_tokens": 25, "cache_creation_input_tokens": 1969, "cache_read_input_tokens": 0})
+    llama = size({"cache_read_input_tokens": 567, "input_tokens": 1411, "output_tokens": 54})
+    assert omlx == (1969, "input_tokens=0+cache_creation 1969 (sum 1969)")
+    assert llama == (1978, "input_tokens=1411+cache_read 567 (sum 1978)")
+    assert size({"input_tokens": 1963, "output_tokens": 55}) == (1963, "input_tokens=1963")
+    assert size({"cache_creation_input_tokens": 700}) == (700, "input_tokens=0+cache_creation 700 (sum 700)")
+    assert size({"output_tokens": 3}) == (None, "input_tokens=None") and size(None)[0] is None
+    assert Gate.drop_note(omlx[0], llama[0]) == (False, "") and Gate.drop_note(600, llama[0])[0]

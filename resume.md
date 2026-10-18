@@ -1,9 +1,65 @@
 # Resume — current progress
 
-Updated: 2026-10-18 18:00 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 18:30 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 18:00): Tier-1 measurements complete; PRs next
+## Current state (2026-10-18 18:30): battery re-run running
+
+- **Finding: the night's timed runs ran on a nearly empty battery.**
+  - The machine is on a 96 W USB-C adapter, which cannot supply it under sustained GPU load,
+    so the battery drains even on AC.
+  - Back-to-back timed runs drained it from 95 % (02:00) to 6 % (05:15): first the
+    agent-benchmark session's harness smoke (02:17–04:15), then ours from 04:20. It stayed
+    at 6–14 % until 08:40.
+  - Near 6–7 % the system capped power:
+    - llama.cpp 16K thinking decode fell from ~21.5 to 16.8 tok/s within a minute at
+      05:16; 32K thinking ran at 15.7 tok/s;
+    - vLLM-Metal's M2 64K took 187 s at 07:56–08:11, against 163 s (G5) at full charge.
+  - `pmset -g therm` showed nothing. Thermal pressure (`notifyutil`) reached level 2 at
+    night and in the afternoon alike, so it is not the cause.
+  - **So "thinking decode is ~25 % slower" (open issue 2) was the power cap.**
+- **Pre-registered check for the llama.cpp `mtp-off` M3 re-run.** The pre-cap trials
+  (05:13–05:15) gave 21.5–22.0 tok/s at 16K with thinking on, against 23.1 with it off;
+  a 5–7 % gap is expected from the longer context during generation.
+  - Issue closed if 16K thinking ≥ 20.5 tok/s and 32K thinking ≥ 18.5 tok/s.
+  - A real effect, to investigate server-side, if 16K ≤ 18 or 32K ≤ 17.
+  - In between: look closer before deciding.
+- **Quarantined** (moved to `raw/_unverified/`, with `README-battery.txt`). These ran with
+  the battery below 30 %:
+  - llama.cpp: m1, m2, m3 and m4 for `mtp-off`; m1, m3 and m4 for `mtp-on`; m5 for `conc`,
+    with its monitor TSV.
+  - oMLX: the night gate and m1–m5.
+  - vLLM-Metal: the 07:46 gate, m1 and m2, with their monitor TSV.
+
+  Kept: the M7 runs (correctness only, no timing), the afternoon runs (battery 91–100 %),
+  and the night monitor TSVs that cover M7.
+- **Tooling** (METHODOLOGY.md, "Battery"):
+  - quietlib: a battery below 20 % marks a sample DISTURBED; the battery level and the
+    thermal pressure level are logged in every row (TSV v3); new `battery --min --wait`
+    subcommand; `check --min-battery`.
+  - run_framework.sh waits up to 90 min, with the server idle and charging, until the
+    battery is ≥ 40 %, both before the server starts and before each suite.
+- **Harness fixes** (88 tests pass):
+  - G3's drop check sums `input_tokens + cache_creation_input_tokens +
+    cache_read_input_tokens`. All three frameworks split Anthropic usage, not only oMLX.
+    With the sums, nothing is dropped: the tool_result image and the control differ by
+    10–15 tokens.
+  - M4 reports the slope with and without step 1. For oMLX it goes from −0.136 to
+    +0.068 s/step once step 1 is left out.
+- **Chain**, started at about 18:28 under a lock with a 300 min ETA:
+  `scripts/run_tier1.sh vllm-rerun omlx-rerun llama-off-rerun llama-on-rerun llama-conc-rerun`
+  (the log is named in `logs/tier1.current`). The gates are re-run too, so their fragments
+  carry the G3 fix.
+- **Daemons still paused:** suggestd (43674) since 16:19; mediaanalysisd (1221) and
+  spotlightknowledged (50910) since 17:29:33. **Restore after the chain**, the user running
+  `kill -CONT 43674 1221 50910`, then `launchctl enable gui/501/com.apple.suggestd`. Tell
+  both other sessions.
+- **Peers:** `localmelo_main` stopped its work at 18:18 and is waiting for our release
+  message. The agent-benchmark session knows about the re-run, and it adopts the battery
+  rule for its own timed runs.
+- **Stay idle during timed suites:** only Monitor re-arms, and no `log show` or greps.
+
+## State at 18:00 (superseded at 18:20: the night suites were quarantined; see above)
 
 - **Tier-1 is fully measured.** Every suite below passed the pre-flight and the monitor
   check. The lock was released at 17:53:11, and both other sessions were told.

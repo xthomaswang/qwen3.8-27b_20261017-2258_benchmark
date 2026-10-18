@@ -181,13 +181,19 @@ def s_m4(runs: list[dict]) -> str:
                      cell([m["e2e_s"] for m in ms]), med(cached), med(prompt), med(share, 2), str(len(sel) - len(ms))])
     summ = next((ln for r in runs for ln in r["lines"] if ln.get("type") == "summary"), {})
     tot = summ.get("run_total_e2e_s")
-    # slope recomputed from the request lines, so cap-truncated steps count (the suite's own value skips them)
+    # slope recomputed from the request lines, so cap-truncated steps count (the suite's own value skips them);
+    # also without step 1, a near-full re-prefill when the prefix cache does not reuse the step-0 prompt (oMLX)
     from .suites.m4 import slope
     meds = {k: mmm([m["ttft_s"] for m in _ok([x for x in ls if x["step"] == k])])["median"] for k in steps if k >= 1}
-    ks = [k for k in sorted(meds) if meds[k] is not None]
-    sl = slope([float(k) for k in ks], [meds[k] for k in ks])
-    note = (f"\n\nTTFT slope over steps 1-{max(steps) if steps else 0}: {_f(sl, 4)} s/step; "
-            f"total e2e per run: {', '.join(_f(x, 1) for x in tot) if tot else '-'} s.")
+
+    def sl(first: int) -> str:
+        ks = [k for k in sorted(meds) if k >= first and meds[k] is not None]
+        return _f(slope([float(k) for k in ks], [meds[k] for k in ks]), 4)
+
+    last = max(steps) if steps else 0
+    note = (f"\n\nTTFT slope over steps 1-{last}: {sl(1)} s/step"
+            + (f" (steps 2-{last}: {sl(2)} s/step)" if last >= 2 else "")
+            + f"; total e2e per run: {', '.join(_f(x, 1) for x in tot) if tot else '-'} s.")
     return table(["Step", "n", "TTFT s", "e2e s", "cached tok (med)", "prompt tok (med)", "cached share", "errors"],
                  rows) + note + truncation_note(ls)
 
