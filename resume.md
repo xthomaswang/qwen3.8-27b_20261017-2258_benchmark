@@ -81,6 +81,11 @@ when resuming.
     - So on oMLX, Claude Code sees screenshots, but Hermes-style OpenAI tool images do not.
     - Their stdlib probe is at `experiments/personal-agent-bench/scripts/probe_tool_images.py`.
       Read it as a reference; do not copy their run data into this repo.
+    - **Local patch.** With the user's consent, the agent-benchmark session patched its *own*
+      oMLX worktree to keep OpenAI tool-message images, following oMLX's Anthropic path:
+      branch `pab/openai-tool-message-images`, commit `57620a3f`, not pushed upstream. It was
+      re-testing that at 10:21. Our `serving/omlx_0.7` stays stock 0.7.1rc1, so our G2b
+      should show the drop. In the summary, report the patch as a known, unreleased fix.
 - **Open issues to fix before the PRs.**
   1. **oMLX M4 errors.**
      - What happens: 22 of 63 requests ended with an `incomplete_tool_call` stream error,
