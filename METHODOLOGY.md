@@ -51,16 +51,36 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
      session's process.
   3. Run the segment.
   4. Delete the lock as soon as the segment ends.
-- **Quiet machine.** Published numbers come only from timed segments in which the machine was
-  quiet:
-  - `scripts/quiet_check.sh --allow-pid <server pid>` passes before the segment starts.
-    Its output (lock, port 8500, load average, busy foreign processes, build/convert/download
-    tools, thermal warnings, power) is stored with the raw data.
-  - No subagent work (compiles, conversions, fixture generation, test suites) and no
-    downloads run while a timed segment is in progress.
-  - A run that may have been disturbed (background load, a thermal warning, a configuration
-    doubt, a broken trial) is moved to `<framework>/raw/_unverified/`. That directory is
-    gitignored and never published. The run is repeated before any number is reported.
+- **Quiet machine.** Published numbers come only from suites during which the machine was
+  quiet. `scripts/run_framework.sh` runs one `agentbench run-all` per suite and enforces the
+  rule with `scripts/quietlib.py`. "Foreign" below means any process outside the run's own
+  process tree (server, engine workers, harness); WindowServer and kernel_task are ignored.
+  - **Before the server starts.** The GPU is idle, and no other model is resident: at most
+    6 GB of GPU memory is in use.
+  - **Before each suite,** with the server idle, `scripts/quiet_check.sh` must pass. The
+    runner waits up to 10 min for it. Criteria:
+    - our GPU lock is held, port 8500 is down, and the machine is on AC power in High Power
+      mode;
+    - 1-min load average ≤ 2.5, and GPU utilization ≤ 10 %;
+    - no foreign process above 25 % CPU, and foreign CPU in total ≤ 150 %;
+    - no build, convert or download tools running, and no thermal warning.
+
+    The check's output is stored in every raw file's header.
+  - **During each suite,** a monitor samples every 10 s into
+    `<framework>/raw/monitor-<tag>-<ts>.tsv`, which is committed with the results. The suite
+    counts as disturbed on either of these:
+    - a lock, port, power, thermal or build-tool event;
+    - foreign CPU over the limits above in two consecutive samples.
+
+    A single over-limit sample, typically a macOS daemon blip, is logged as `SPIKE` and does
+    not count. Load average is logged but not judged, because the server under test adds to
+    it.
+  - A disturbed suite is moved to `<framework>/raw/_unverified/` and repeated once
+    automatically. That directory is gitignored and never published. The same applies to any
+    run with a configuration doubt or a broken trial. Nothing from such a run is reported
+    until it has been repeated cleanly.
+  - No subagent work runs while a timed segment is in progress: no compiles, conversions,
+    fixture generation, test suites or downloads.
 - **Ordering.** When two frameworks are compared directly (e.g. Core AI vs MLX on the same
   protocol), their runs alternate A/B/A/B after an idle cool-down, so drift such as
   thermal throttling cannot favour either side.
@@ -68,6 +88,7 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
 
   | Framework | Port |
   | --- | --- |
+  | MLC-LLM | 8700 |
   | mlx-lm | 8701 |
   | llama-server | 8702 |
   | oMLX | 8703 |

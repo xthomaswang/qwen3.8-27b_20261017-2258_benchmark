@@ -80,6 +80,9 @@ The launch commands are the ones in each `<framework>/env.md`. Deviations:
 | `omlx_configure.sh` | `hf-bench` links for complete tiers, plus `max_context_window: 131072` per model in `.bench-home/model_settings.json`. Idempotent; refuses while 8703 listens. |
 | `make_procfix.sh` | Builds or verifies (`--check`) the vLLM-Metal procfix view. It never modifies an existing view and never links or writes the upstream `README.md`. |
 | `hf_snapshot.py` | Resolves `refs/main` and checks the needed files against `trees/<commit>.json` sizes and the safetensors/GGUF headers. Leftover `.incomplete` blobs are ignored once the real file is complete. |
+| `run_framework.sh` | One framework variant end to end, with the lock already held. It checks that the GPU is idle with no model resident, then serve → wait → warm-up. After that it runs one `agentbench run-all` per suite: wait until quiet (≤ 10 min) → the suite, with the harness pre-flight → a monitor verdict. A suite the monitor saw disturbed moves to `raw/_unverified/` and is repeated once. At the end it regenerates `summary.md` and stops the server. Logs: `logs/run-<fw>-<tag>-<suite>.log`, `logs/monitor-<fw>-<tag>.events`. |
+| `quiet_check.sh` | The quiet-machine pre-flight, a wrapper for `quietlib.py check`. `--allow-pid` exempts a PID and its descendants. `--settle S` waits up to S seconds for soft failures to clear. `--max-gpu-gb G` fails while another model is resident. Criteria: METHODOLOGY.md, "Quiet machine". |
+| `quietlib.py` | `check`, `monitor` (TSV every 10 s, with state changes on stdout) and `verify` (moves result files whose window holds a DISTURBED sample, or a sampling gap). Stdlib only; run with `/usr/bin/python3 -I`. |
 | `lib.sh` | Shared helpers (ports, lock, PID ownership, quoting). |
 | `download_models.sh` | Fetches the checkpoints into the shared HF cache. |
 
