@@ -55,13 +55,16 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
   quiet. `scripts/run_framework.sh` runs one `agentbench run-all` per suite and enforces the
   rule with `scripts/quietlib.py`. "Foreign" below means any process outside the run's own
   process tree (server, engine workers, harness); WindowServer and kernel_task are ignored.
-  - **User activity is declared for the whole run.** A `caffeinate -u` assertion, the same
-    signal as touching the keyboard, stays held. On an idle machine on AC power, macOS starts
+  - **User activity is declared every 60 s for the whole run,** with `caffeinate -u -t 1`,
+    the same signal as touching the keyboard. On an idle machine on AC power, macOS starts
     discretionary background work. On the night of 2026-10-18 that was suggestd harvesting
     at ~100 % of a core for over two hours, and mediaanalysisd at ~220 %. Both dropped to 0 %
-    within 10 s of the assertion. The assertion triggers a short "user returned" burst of
-    about 30 s (Spotlight, widgets), and the pre-serve wait absorbs it. Every framework runs
-    under the same assertion.
+    within 5 s of a declaration.
+    - A single declaration does not last: holding one assertion let them resume after about
+      7 min. Hence the repeat.
+    - The first declaration triggers a short "user returned" burst of about 30 s (Spotlight,
+      widgets). The runner waits 45 s before its first check to absorb it.
+    - Every framework runs under the same heartbeat.
   - **Before the server starts.** The GPU is idle, and no other model is resident: at most
     6 GB of GPU memory is in use.
   - **Before each suite,** with the server idle, `scripts/quiet_check.sh` must pass. The
