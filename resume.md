@@ -1,49 +1,77 @@
 # Resume — current progress
 
-Updated: 2026-10-18 03:50 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 08:45 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 03:50)
+## Current state (2026-10-18 08:45): Tier-1 paused by the user
 
-- **All seven frameworks are ready.** Installs and model artifacts are in place, and every
-  `serve.sh` variant passes a dry run:
-  - llama.cpp, oMLX, vLLM-Metal, lithos-metal, mlx-lm;
-  - Core AI, through `llm-server`, text-only;
-  - MLC-LLM, from a source build, on port 8700.
-- **Quiet-machine tooling** (commit `7a74090`; details in METHODOLOGY.md, "Quiet machine").
-  - `scripts/quietlib.py` provides `check`, `monitor` and `verify`; `quiet_check.sh` wraps
-    `check`.
-  - `scripts/run_framework.sh` runs one `run-all` per suite:
-    1. Before serving, the GPU must be idle with no model resident.
-    2. Before each suite, it waits up to 10 min for a quiet check to pass.
-    3. During the run, a monitor writes a TSV every 10 s into `<fw>/raw/`.
-    4. A disturbed suite moves to `raw/_unverified/` and is repeated once.
-    5. At the end, `summary.md` is regenerated from the verified files.
+- **The run was stopped at 08:39 on the user's request.** The runner, harness, vLLM server,
+  monitor and heartbeats are all stopped, and ports 8700–8705 are free. The GPU lock was
+  released at 08:40:04, and the agent-benchmark session was told; the GPU is theirs until
+  we resume. Before resuming, message them, then acquire the lock.
+- **Tier-1 status.** Every "verified" suite passed the pre-flight and the monitor check.
 
-    Options: `RUN_UNVERIFIED=1` runs a mechanics check; `SUITE_ARGS_<suite>` passes extra
-    arguments to one suite.
-  - `scripts/run_tier1.sh` runs the Tier-1 block (`llama-off llama-on llama-conc omlx vllm`)
-    with a 120 s cool-down between steps. M7 uses `--trials 1`.
-  - None of this has run against a live server yet. Do the mechanics check first.
-- **Blocker: `suggestd`.**
-  - PID 1005 has held one core at ~100% since about 01:40. It is running a
-    ProactiveHarvesting pass over Mail, Messages and Notes, and had used 122 CPU-min by 03:45.
-  - The auto-mode classifier denied `killall suggestd`.
-  - Options: the user runs `! killall suggestd` (launchd restarts it), or we wait. A
-    background watcher reports when it goes idle.
-- **GPU schedule.**
-  - 03:28: we took the lock, then swapped with the peer.
-  - Now: the peer runs its MCP arm (03:32 until about 04:30–05:00; not timed).
-  - Next: our mechanics check and Tier-1 (~4 h), then the references, back to back.
-  - While we time, the peer runs no test suites, analysis scripts or compiles.
+  | Variant (tag) | Verified suites | Still to run |
+  | --- | --- | --- |
+  | llama.cpp `mtp-off` (`4bit-mtp-off`) | m1 m2 m3 m4 m7 | **gate**: disturbed twice (startup burst, then suggestd) |
+  | llama.cpp `mtp-on` (`4bit-mtp-on`) | m1 m3 m4 m7 | — |
+  | llama.cpp `conc` (`4bit-conc`) | m5 | — |
+  | oMLX `spec-off` (`4bit-spec-off`) | gate m1 m2 m3 m4 m5 m7 | — |
+  | vLLM-Metal `spec-off` (`4bit-spec-off`) | gate m1 m2 | **m3 m4 m5 m7**: the m3 retry was cut by the pause |
+
+- **Working tree.** Nothing from the formal runs is committed or pushed yet. The results
+  are untracked in `<fw>/raw/`, `<fw>/summary.md` and `<fw>/capabilities.md`.
+  - `llama.cpp/capabilities.md` holds the gate fragment of a *disturbed* attempt. The gate
+    re-run overwrites it; do not commit it before then.
+  - `vllm-metal/summary.md` holds only the M2 section, because each per-suite run-all
+    upserts its own suite. Regenerate it after the remaining suites (`agentbench summarize
+    --framework vllm-metal --tag 4bit-spec-off --write`).
+  - Quarantined in `raw/_unverified/` (gitignored, never publish):
+    - llama.cpp: gate ×2 and the first m2 attempt;
+    - vLLM-Metal: the first m1 attempt (airportd), the first m3 attempt (sysmond, plus
+      another session's 50 s grep), and the partial second m3.
+- **Numbers stay local until the PRs.** The preliminary tables are in the untracked
+  `<fw>/summary.md` files. They are not copied here, because this file is public, and one
+  of them is known to be off: oMLX's M4 per-run totals may skip the error-flagged steps (issue 1
+  below).
+- **Open issues to fix before the PRs.**
+  1. **oMLX M4 errors.**
+     - What happens: 22 of 63 requests ended with an `incomplete_tool_call` stream error,
+       raised when the 150-token cap cut a multi-call step. llama.cpp returns
+       `finish_reason=length` for the same thing.
+     - Effect: the harness counts these as errors, so some steps show n=0. Their TTFT and
+       e2e are valid; cached tokens are missing because no usage chunk arrives.
+     - Fix: in `summarize`, count cap-truncated streams as latency samples and flag them.
+       Then run pytest and regenerate the summaries. Note it in capabilities, since it is
+       safer agent behaviour.
+  2. **llama.cpp thinking-mode decode is ~25 % slower** than non-thinking, with MTP off and
+     on. Check the M3 thinking request shape (sampling fields?) and the server-side
+     `timings`.
+  3. **Drift anchor.** Re-run llama.cpp `mtp-off` M1 under tag `4bit-mtp-off-anchor` and
+     compare it with 04:35 (warm 4.361 s, cold 31.205 s). This checks for thermal or
+     long-run drift across the block.
+  4. **Privacy check before committing.** The monitor TSVs and pre-flight blocks list
+     foreign process basenames: Apple apps such as Maps, Music and Mail, and possibly
+     third-party apps. Redact third-party app names before pushing.
+- **Tooling learned tonight** (all in METHODOLOGY.md, "Quiet machine"; commits up to
+  `0ebf4d0`).
+  - **Heartbeat.** macOS discretionary daemons (suggestd, mediaanalysisd) start on an idle
+    machine on AC power. A `caffeinate -u -t 1` heartbeat every 60 s stops them within 5 s;
+    a single held assertion lasts only ~7 min. `killall suggestd` was denied by the
+    auto-mode classifier, so it was not used.
+  - **Persistence rule.** verify counts CPU only when the same process, or the total, stays
+    over the limit in consecutive samples. One-sample blips (Watch sync, Spotlight, WebKit,
+    Maps, Apple Intelligence) come about every minute.
+  - **Other sessions.** Other Claude sessions on the machine can disturb runs: at 08:27
+    `localmelo_main` ran a 50 s grep. The agent-benchmark session relays requests to them.
 
 | # | Phase | Status |
 | --- | --- | --- |
 | 0 | Plan, repo scaffold, methodology | **done** |
 | 1 | Framework installs + flag research | **done** (all seven) |
 | 1b | Manual smoke tests | **done** |
-| 2 | Harness + fixtures + quiet-machine tooling | **done** (tooling still needs its live mechanics check) |
-| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **next**: Tier-1 after the peer's MCP arm |
+| 2 | Harness + fixtures + quiet-machine tooling | **done**; live mechanics check passed 04:16–04:23 |
+| 3–4 | Formal gate + metrics, one `bench/<fw>` PR each, self-merged | **in progress**: Tier-1 ~80 % done, paused; no PR yet |
 | 5 | Summary PR + Chinese summary to the agent-benchmark session | pending |
 
 ## Formal run plan (quiet machine, `--preflight` on every run)
@@ -146,27 +174,33 @@ Notes:
 
 ## Next steps (in order)
 
-1. When the peer releases the lock, message it, then run
-   `scripts/gpu_lock.sh acquire "Formal Tier-1 ..." 240`.
-2. **Idle calibration.** With nothing running, take six readings of
-   `scripts/quiet_check.sh` over about a minute. If the idle baseline sits near a limit,
-   adjust the `QUIET_*` defaults and record the change in METHODOLOGY.md.
-3. **Mechanics check** (`RUN_UNVERIFIED=1`):
-   - llama.cpp `mtp-off`, `m1,m4 --quick`;
-   - vLLM-Metal and oMLX, `m7 --quick`.
-
-   Check the process trees, the idle GPU %, the monitor TSV and the `verify` lines.
-4. Start `scripts/run_tier1.sh` in the background, and watch `logs/monitor-*.events` for
-   `DISTURBED`.
-5. **Per framework:**
-   1. Create the branch `bench/<fw>`.
-   2. Commit `raw/*.jsonl`, the monitor TSV, `summary.md`, `capabilities.md` and `env.md`.
-   3. Open a PR and self-merge it.
-   4. Update the README status table and this file.
-6. **References**, `--text-only`: lithos-metal, mlx-lm, Core AI, MLC-LLM.
-7. **The rest:** 8-bit rows, the direct-call A/B/A/B, and M6.
-8. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
-   session.
+1. **Resume Tier-1.** Message the agent-benchmark session first, then run
+   `scripts/gpu_lock.sh acquire "Tier-1 remainder: vLLM-Metal m3-m7, llama.cpp gate + anchor" 100`.
+   Then run the following in the background (`nohup … > logs/tier1-rest-<ts>.log 2>&1 &`),
+   and watch it with a Monitor on that log:
+   ```
+   scripts/run_framework.sh vllm-metal spec-off 4bit vllm 4bit-spec-off m3,m4,m5,m7 --spec-label off
+   sleep 120
+   scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off gate
+   scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-anchor m1
+   ```
+   Expect about 70 min. Each run_framework call holds its own heartbeat; a 2 min gap is
+   well under the ~7 min it takes the daemons to come back. Release the lock and tell the
+   peer when it is done.
+2. **Fix the open issues** above: summarize, the thinking-decode check, the anchor
+   comparison and the redaction. Run pytest outside any timed segment.
+3. **Per-framework PRs** (`bench/llama.cpp`, `bench/omlx`, `bench/vllm-metal`):
+   1. Commit `raw/*.jsonl`, `raw/*.md`, the monitor TSVs, `summary.md`, `capabilities.md`
+      and the `env.md` updates.
+   2. Open the PR and self-merge it.
+   3. Update the README status table and this file.
+4. **References**, `--text-only`, one at a time with the lock: lithos-metal (`dspark`,
+   `no-draft`, `nvfp4`, with `--server-log`), mlx-lm, Core AI (`--profile generic`) and
+   MLC-LLM. For MLC-LLM, run G1 first with the log open.
+5. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
+   A/B/A/B, and M6 (10–15 min for the candidates, 30 min for the finalists).
+6. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
+   session: gate pass/fail per framework, the metrics, the recommendation and the reasons.
 
 ## Shared with the other session
 
@@ -195,7 +229,10 @@ Rules for both sessions:
   - Nobody starts a model server or loads a model while the other side holds the lock.
 - Agent traces from the agent benchmark stay on this machine. They are never committed to the public serving-benchmark repo.
 
-State at the 2026-10-17 23:50 pause:
-- No lock is held, and nothing listens on 8500 or 8700-8705.
-- After resuming, local_ai-benchmark messages the agent-benchmark session before its first lock.
-- Whether the agent benchmark switches from 8-bit to 4-bit is the user's call, made after the serving results come in.
+State at the 2026-10-18 08:40 pause:
+- No lock is held. Nothing of ours listens on 8700–8705, and none of our heartbeats or
+  monitors run.
+- After resuming, local_ai-benchmark messages the agent-benchmark session before its first
+  lock.
+- Whether the agent benchmark switches from 8-bit to 4-bit is the user's call, made after the
+  serving results come in.
