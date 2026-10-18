@@ -11,6 +11,9 @@
 #   A suite with a DISTURBED sample in its window is moved to raw/_unverified/ and run again
 #   (QUIET_RETRIES, default 1). State changes are printed to logs/monitor-<fw>-<tag>.events.
 # - summary.md is regenerated at the end from the verified files only.
+# - `caffeinate -u` declares user activity for the whole run. macOS then defers discretionary
+#   background work (suggestd harvesting, mediaanalysisd, Spotlight) that otherwise starts on an
+#   idle machine on AC power; the one-off burst it triggers is absorbed by the pre-serve wait.
 # Per-suite extra arguments: SUITE_ARGS_<suite>, e.g. SUITE_ARGS_m7="--trials 1".
 # RUN_UNVERIFIED=1: a mechanics check. Everything goes to raw/_unverified/, summary.md is untouched,
 #   quiet checks are reported but never block (short waits), and nothing is repeated.
@@ -33,6 +36,7 @@ raw="$ROOT/$fw/raw"; mkdir -p "$raw" logs
 vdir="$raw" unv_arg="" move_arg="--move"
 [ "$UNV" = 1 ] && { vdir="$raw/_unverified" unv_arg="--unverified" move_arg=""; mkdir -p "$vdir"; }
 echo "$(ts) run_framework: $fw $variant $tier, tag $tag, suites $suites"
+caffeinate -u -t 86400 -w $$ > /dev/null 2>&1 &
 # Before loading anything: the GPU must be idle with no other model resident.
 if ! scripts/quiet_check.sh --allow-pid $$ --settle "$PRE_S" --max-gpu-gb "${QUIET_MAX_GPU_GB_IDLE:-6}" > "logs/quiet-$fw-$tag.preserve" 2>&1; then
   echo "$(ts) machine not quiet before serving:"; sed 's/^/  /' "logs/quiet-$fw-$tag.preserve"

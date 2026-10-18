@@ -11,6 +11,7 @@ COOL_S=${COOL_S:-120}
 ts() { date '+%T'; }
 steps=${*:-"llama-off llama-on llama-conc omlx vllm"}
 export SUITE_ARGS_m7="--trials 1"   # M7 is deterministic at temperature 0; one pass per prompt
+caffeinate -u -t 86400 -w $$ > /dev/null 2>&1 &   # user activity across the cool-downs too (see run_framework.sh)
 first=1 failed=""
 for step in $steps; do
   [ "$first" = 1 ] || { echo "$(ts) cool-down ${COOL_S}s"; sleep "$COOL_S"; }
