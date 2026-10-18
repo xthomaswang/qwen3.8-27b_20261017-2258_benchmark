@@ -1,0 +1,26 @@
+# Framework installs: venvs, upstream source clones, build trees (see each <framework>/env.md)
+envs/
+.venv/
+__pycache__/
+*.pyc
+build/
+
+# Runtime state and local logs (raw server logs may contain absolute local paths)
+logs/
+*.log
+omlx-home/
+
+# Never commit weights, derived checkpoints, or exported bundles
+*.gguf
+*.safetensors
+*.aimodel
+models/
+
+# Real agent traffic (peer replay JSONL, real screenshots) stays local
+fixtures/real/
+
+# Secrets
+.env
+*.key
+
+.DS_Store
