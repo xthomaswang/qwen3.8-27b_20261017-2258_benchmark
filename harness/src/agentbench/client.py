@@ -63,6 +63,8 @@ class RequestRecord:
     content: str = ""
     reasoning: str = ""
     reasoning_inline: bool = False
+    reasoning_fields: list[str] = field(default_factory=list)  # e.g. ["reasoning_content"] or ["reasoning"]
+    t_first_data: float | None = None  # first SSE data event of any kind (diagnostic only)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = None
     usage_raw: dict[str, Any] | None = None
@@ -72,6 +74,9 @@ class RequestRecord:
     cached_tokens: int | None = None
     error: dict[str, Any] | None = None
     parse_errors: int = 0
+    tool_call_mode: str = "tool_calls"  # or "structured_output" (calls parsed from JSON content)
+    structured_raw: str | None = None
+    structured_error: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         d = asdict(self)
@@ -215,6 +220,8 @@ class StreamClient:
                     ev = parser.feed_line(line)
                     if ev is None:
                         continue
+                    if rec.t_first_data is None:
+                        rec.t_first_data = now
                     if ev.data.strip() == "[DONE]":
                         break
                     try:
@@ -236,6 +243,10 @@ class StreamClient:
                         delta = ch.get("delta") or {}
                         c = delta.get("content")
                         r = delta.get("reasoning_content") or delta.get("reasoning")
+                        if r:
+                            fld = "reasoning_content" if delta.get("reasoning_content") else "reasoning"
+                            if fld not in rec.reasoning_fields:
+                                rec.reasoning_fields.append(fld)
                         tc = delta.get("tool_calls")
                         if delta.get("function_call"):
                             tc = [{"index": 0, "function": delta["function_call"]}]
@@ -277,6 +288,8 @@ class StreamClient:
             rec.n_ignored["keepalive"] = parser.n_comments
             raw_content = "".join(content)
             rec.content, inline, rec.reasoning_inline = split_inline_think(raw_content)
+            if rec.reasoning_inline and "inline_think" not in rec.reasoning_fields:
+                rec.reasoning_fields.append("inline_think")
             rec.reasoning = "".join(reasoning) or inline
             if rec.reasoning_inline and reasoning:
                 rec.reasoning = "".join(reasoning) + "\n" + inline
@@ -287,18 +300,22 @@ class StreamClient:
             rec.cached_tokens = extract_cached_tokens(rec.usage_raw, rec.timings_raw)
 
     # ------------------------------------------------------------- Anthropic
-    async def messages(self, body: dict[str, Any], headers: dict[str, str] | None = None) -> RequestRecord:
+    async def messages(self, body: dict[str, Any], headers: dict[str, str] | None = None,
+                       add_model: bool = True) -> RequestRecord:
+        """`add_model=False` sends the body as given (profile shaping already decided on `model`)."""
         rec = RequestRecord(api="anthropic", url=self.cfg.base_url + self.cfg.anthropic_path)
         try:
             async with asyncio.timeout(self.cfg.total_timeout_s):
-                await self._messages(body, rec, headers or {})
+                await self._messages(body, rec, headers or {}, add_model)
         except TimeoutError:
             rec.error = {"type": "timeout", "phase": "total", "limit_s": self.cfg.total_timeout_s}
         return rec
 
-    async def _messages(self, body: dict[str, Any], rec: RequestRecord, headers: dict[str, str]) -> None:
+    async def _messages(self, body: dict[str, Any], rec: RequestRecord, headers: dict[str, str],
+                        add_model: bool = True) -> None:
         body = dict(body, stream=True)
-        body.setdefault("model", self.cfg.model)
+        if add_model and self.cfg.model:
+            body.setdefault("model", self.cfg.model)
         hdrs = {"anthropic-version": self.cfg.anthropic_version, "x-api-key": self.cfg.api_key or "local", **headers}
         parser = SSEParser()
         blocks: dict[int, dict[str, Any]] = {}
@@ -369,6 +386,8 @@ class StreamClient:
                     rec.content += b.get("text", "")
                 elif b.get("type") == "thinking":
                     rec.reasoning += b.get("thinking", "")
+                    if b.get("thinking") and "thinking_block" not in rec.reasoning_fields:
+                        rec.reasoning_fields.append("thinking_block")
                 elif b.get("type") == "tool_use":
                     raw = b["_json"]
                     call = {"id": b.get("id"), "name": b.get("name", ""), "arguments": raw, "index": idx}

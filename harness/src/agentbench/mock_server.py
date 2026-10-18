@@ -1,8 +1,9 @@
 """Mock OpenAI + Anthropic SSE server for tests (stdlib asyncio, chunked HTTP/1.1).
 
-The scenario is chosen by the `x-mock-scenario` request header (default "text").
-Bind to an ephemeral port (port=0) in tests, or 8790-8799 for manual runs; never to
-8500 or 8600-8699.
+Legacy mode (no responder): the scenario is chosen by the `x-mock-scenario` request header
+(default "text"). With a `responder` (see agentbench.mock_smart.SmartResponder) every
+request is answered by it instead. Bind to an ephemeral port (port=0) in tests, or
+8790-8799 for manual runs; never to 8500, 8600-8699 or the frameworks' 8700-8705.
 """
 
 from __future__ import annotations
@@ -88,8 +89,9 @@ def anthropic_events(scenario: str) -> list[tuple[float, str]]:
 
 
 class MockServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 0, responder=None) -> None:
         self.host, self.port = host, port
+        self.responder = responder
         self.requests: list[dict[str, Any]] = []
         self._loop: asyncio.AbstractEventLoop | None = None
         self._server: asyncio.base_events.Server | None = None
@@ -107,6 +109,9 @@ class MockServer:
             hdrs = {k.lower(): v.strip() for k, _, v in (ln.partition(":") for ln in lines[1:] if ln)}
             body = await reader.readexactly(int(hdrs.get("content-length", 0)))
             req = json.loads(body) if body else {}
+            if self.responder is not None:
+                await self._respond(writer, await self.responder(method, path, hdrs, req))
+                return
             scen = hdrs.get("x-mock-scenario", "text")
             self.requests.append({"path": path, "scenario": scen, "body": req, "t": asyncio.get_running_loop().time()})
             if scen.startswith("http_"):
@@ -135,6 +140,29 @@ class MockServer:
         finally:
             writer.close()
 
+    @staticmethod
+    async def _respond(writer: asyncio.StreamWriter, resp: tuple) -> None:
+        if resp[0] == "json":
+            _, code, obj = resp
+            payload = json.dumps(obj).encode()
+            writer.write(f"HTTP/1.1 {code} {'OK' if code < 400 else 'Error'}\r\nContent-Type: application/json\r\n"
+                         f"Content-Length: {len(payload)}\r\nConnection: close\r\n\r\n".encode() + payload)
+            await writer.drain()
+            return
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n"
+                     b"Connection: close\r\n\r\n")
+        await writer.drain()
+        gen = resp[1]
+        try:
+            async for raw in gen:
+                data = raw.encode()
+                writer.write(f"{len(data):x}\r\n".encode() + data + b"\r\n")
+                await writer.drain()
+            writer.write(b"0\r\n\r\n")
+            await writer.drain()
+        finally:
+            await gen.aclose()
+
     def _run(self) -> None:
         self._loop = asyncio.new_event_loop()
 
@@ -152,5 +180,21 @@ class MockServer:
         return self
 
     def stop(self) -> None:
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
+        """Close the listener, cancel in-flight handlers (they close their sockets while the
+        loop still runs), then stop the loop."""
+        if not self._loop:
+            return
+
+        async def shutdown() -> None:
+            if self._server:
+                self._server.close()
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        try:
+            asyncio.run_coroutine_threadsafe(shutdown(), self._loop).result(5)
+        except Exception:  # noqa: BLE001 - best effort
+            pass
+        self._loop.call_soon_threadsafe(self._loop.stop)

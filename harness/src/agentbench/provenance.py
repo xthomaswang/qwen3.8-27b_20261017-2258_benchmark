@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+@lru_cache(maxsize=1)
 def harness_git() -> dict[str, Any]:
     root = str(repo_root())
     head = _run(["git", "-C", root, "rev-parse", "HEAD"])
@@ -37,6 +39,7 @@ def harness_git() -> dict[str, Any]:
     return {"commit": head, "dirty": bool(dirty) if dirty is not None else None}
 
 
+@lru_cache(maxsize=1)
 def system_info() -> dict[str, Any]:
     sw = {k: _run(["sw_vers", f"-{k[0].lower()}{k[1:]}"]) for k in ("ProductVersion", "BuildVersion")}
     beta = "/Applications/Xcode-beta.app/Contents/Developer"
@@ -62,7 +65,7 @@ def header(suite: str, tag: str, framework: dict[str, Any], server: dict[str, An
         "created": _dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "framework": fw,
         "server": server,
-        "harness": harness_git(),
-        "system": system_info(),
+        "harness": dict(harness_git()),
+        "system": dict(system_info()),
         "args": {k: (redact(v) if isinstance(v, str) else v) for k, v in args.items()},
     }

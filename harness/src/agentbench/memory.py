@@ -96,6 +96,12 @@ class MemorySampler:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        try:  # always end with one sample, so short segments are never empty
+            s = await sample_once(self.pid)
+            self.samples.append(s)
+            self.sink(s)
+        except Exception:  # noqa: BLE001 - sampling must never break a measurement
+            pass
 
     def peak_tree_bytes(self) -> int | None:
         return max((s["tree_bytes"] for s in self.samples), default=None)
