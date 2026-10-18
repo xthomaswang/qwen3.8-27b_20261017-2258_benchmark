@@ -378,6 +378,20 @@ def upsert_section(path: Path, key: str, body: str, title: str) -> None:
     path.write_text(redact(text), encoding="utf-8")
 
 
+def remove_section(path: Path, key: str) -> bool:
+    """Drop the block between `<!-- agentbench:begin/end <key> -->` markers, if present."""
+    if not path.exists():
+        return False
+    begin, end = f"<!-- agentbench:begin {key} -->", f"<!-- agentbench:end {key} -->"
+    text = path.read_text(encoding="utf-8")
+    if begin not in text or end not in text:
+        return False
+    a, b = text.index(begin), text.index(end) + len(end)
+    text = (text[:a].rstrip("\n") + "\n" + text[b:].lstrip("\n")).rstrip("\n") + "\n"
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
 def eprint(*a: Any) -> None:
     print(*a, file=sys.stderr, flush=True)
 

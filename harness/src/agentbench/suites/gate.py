@@ -490,8 +490,8 @@ async def run(cfg: RunConfig, target: Target, writer: Writer, opts: Any = None) 
     frag = g.fragment()
     md = writer.path.with_suffix(".md")
     md.write_text(frag, encoding="utf-8")
-    upsert_section(cfg.fw_dir / "capabilities.md", f"gate {cfg.tag}", frag,
-                   f"{cfg.framework or cfg.profile.framework}: capabilities")
+    cap = cfg.fw_dir / ("raw/_unverified/capabilities.md" if cfg.unverified else "capabilities.md")
+    upsert_section(cap, f"gate {cfg.tag}", frag, f"{cfg.framework or cfg.profile.framework}: capabilities")
     summary = {"type": "summary", "suite": "gate", "items": g.items, "probes": g.probes, "fragment": md.name}
     writer.write(summary)
     print(g.table())

@@ -274,6 +274,9 @@ def summarize(fw_dir: Path, tag: str | None = None, files: list[Path] | None = N
               write: bool = False) -> str:
     from .suites.common import upsert_section
 
+    from .suites.common import remove_section
+
+    full = files is None  # a full regeneration from raw/*.jsonl (run-all passes only its own files)
     files = files or sorted((fw_dir / "raw").glob("*.jsonl"))
     by = select(files, tag, all_runs)
     parts = []
@@ -282,4 +285,13 @@ def summarize(fw_dir: Path, tag: str | None = None, files: list[Path] | None = N
         parts.append(md)
         if write:
             upsert_section(fw_dir / "summary.md", f"summary {t}", md, f"{fw_dir.name}: results")
+    if write and full:  # capabilities.md shows only verified gate runs: the latest one per tag, or nothing
+        for t in ([tag] if tag else sorted(by)):
+            gates = (by.get(t) or {}).get("gate") or []
+            frag = gates[-1]["path"].with_suffix(".md") if gates else None
+            if frag is not None and frag.exists() and "_unverified" not in frag.parts:
+                upsert_section(fw_dir / "capabilities.md", f"gate {t}", frag.read_text(encoding="utf-8"),
+                               f"{fw_dir.name}: capabilities")
+            else:
+                remove_section(fw_dir / "capabilities.md", f"gate {t}")
     return "\n".join(parts) if parts else "_no result files found_\n"

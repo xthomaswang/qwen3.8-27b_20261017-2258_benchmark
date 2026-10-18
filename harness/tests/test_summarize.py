@@ -86,3 +86,25 @@ def test_cap_truncated_streams_count_as_latency_samples():
     assert rows["3"][2].strip() == "0" and rows["3"][-2].strip() == "1"  # a real error stays an error
     assert "slope over steps 1-3: 0.5000 s/step" in md
     assert "1 of 4 requests ended at the token cap" in md
+
+
+def test_capabilities_md_follows_verified_gate_runs(run_dir, tmp_path):
+    """A full `summarize --write` mirrors the latest verified gate fragment per tag, and drops the
+    section when the tag's gate run was moved to raw/_unverified/."""
+    import shutil
+
+    from agentbench.summarize import summarize as summ
+
+    fw = tmp_path / "omlx"
+    shutil.copytree(run_dir / "omlx", fw)
+    cap = fw / "capabilities.md"
+    summ(fw, "t", write=True)
+    assert "<!-- agentbench:begin gate t -->" in cap.read_text()
+    unv = fw / "raw" / "_unverified"
+    unv.mkdir(exist_ok=True)
+    for f in (fw / "raw").glob("gate-t-*"):
+        f.rename(unv / f.name)
+    summ(fw, "t", files=sorted((fw / "raw").glob("m1-*.jsonl")), write=True)  # partial: leaves capabilities alone
+    assert "<!-- agentbench:begin gate t -->" in cap.read_text()
+    summ(fw, "t", write=True)
+    assert "<!-- agentbench:begin gate t -->" not in cap.read_text()
