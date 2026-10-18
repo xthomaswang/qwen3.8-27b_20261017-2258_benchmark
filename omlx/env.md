@@ -415,3 +415,15 @@ These are first-request timings, not benchmark numbers.
 | `/v1/messages`, no thinking field | HTTP 200; the response starts with a `thinking` block. |
 
 **To check in the formal run.** The agent-benchmark session reports that oMLX 0.7 applies sampling defaults from `generation_config` (e.g. `top_k 20`). Verify that request-level `temperature=0` is honoured.
+
+## Determinism and thinking checks, 2026-10-18 02:02 (short check, not timed)
+
+**Greedy decoding is honoured.** The same prompt was sent three times (`temperature: 0`,
+`enable_thinking: false`, 96 tokens) and produced byte-identical outputs (sha256
+`dc80a6df…`). The `generation_config` defaults that oMLX 0.7 applies (e.g. `top_k 20`) do not
+override a request-level `temperature: 0`.
+
+**Thinking cannot be disabled with `reasoning_effort` alone.** A top-level
+`reasoning_effort: "none"` sent without `chat_template_kwargs.enable_thinking` does **not**
+disable thinking (seen in the quick gate run). Hermes-style requests send both fields and
+behave correctly.

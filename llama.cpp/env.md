@@ -369,3 +369,18 @@ not benchmark numbers.
 | `/v1/messages`, no thinking field | HTTP 200, response starts with a `thinking` block | — |
 
 - **MTP drafting.** The draft model `MTP/mtp-Qwen3.8-27B-Q4_0.gguf` loads alongside the mmproj; the two coexist. Per-request draft acceptance in the log was 0.50–0.90, with a mean accepted length of 2.5–3.7 tokens per step. The tool call reached 27/30, mean length 3.70.
+
+## Prefix reuse check, 2026-10-18 01:59 (quick harness validation, unverified run)
+
+With the default launch flags (`--ctx-checkpoints 32 --checkpoint-min-step 8192 --cache-ram 8192`), the M4 trajectory reuses everything except each step's new ≈1.7K tokens:
+
+| Step | Prompt tokens | `cache_n` | Newly processed | TTFT |
+| --- | --- | --- | --- | --- |
+| 0 (cold) | 15,030 | 0 | 15,030 | 29.0 s |
+| 1 | 16,733 | 15,026 | 1,707 | 4.9 s |
+| 2 | 18,439 | 16,729 | 1,710 | 4.9 s |
+| 3 | 20,140 | 18,435 | 1,705 | 5.0 s |
+
+- The checkpoint taken near the end of the previous prompt is the one reused, so `--checkpoint-min-step 8192` does not inflate per-step TTFT for 1.7K-token steps. We keep the flags unchanged.
+- The ≈4.9 s per step covers the vision encode of one 1280×1024 screenshot plus ≈1.7K new tokens, an effective ≈350 tok/s.
+- MTP accepted 62–106 of 87–128 drafts per step.
