@@ -1,14 +1,22 @@
 # Resume — current progress
 
-Updated: 2026-10-18 08:45 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 10:15 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 08:45): Tier-1 paused by the user
+## Current state (2026-10-18 10:15): Tier-1 paused again by the user
 
-- **The run was stopped at 08:39 on the user's request.** The runner, harness, vLLM server,
-  monitor and heartbeats are all stopped, and ports 8700–8705 are free. The GPU lock was
-  released at 08:40:04, and the agent-benchmark session was told; the GPU is theirs until
-  we resume. Before resuming, message them, then acquire the lock.
+- **Two pauses so far, both on the user's request.**
+  - The first was at 08:39.
+  - The run resumed at 09:44 (vLLM-Metal m3,m4,m5,m7, then the llama.cpp gate, then the
+    anchor).
+  - The second pause came at 10:13:55. The user asked to let the nearly finished suite end
+    and then stop, so vLLM-Metal's m3 was allowed to finish. A trigger then stopped the
+    runner before the m3 retry could start; its harness was killed within a second and
+    wrote no file.
+
+  The runner, harness, server, monitor and heartbeats are all stopped, and ports 8700–8705
+  are free. The lock was released at 10:14:15, and the agent-benchmark session was told.
+  Before resuming, message them, then acquire the lock.
 - **Tier-1 status.** Every "verified" suite passed the pre-flight and the monitor check.
 
   | Variant (tag) | Verified suites | Still to run |
@@ -17,7 +25,7 @@ when resuming.
   | llama.cpp `mtp-on` (`4bit-mtp-on`) | m1 m3 m4 m7 | — |
   | llama.cpp `conc` (`4bit-conc`) | m5 | — |
   | oMLX `spec-off` (`4bit-spec-off`) | gate m1 m2 m3 m4 m5 m7 | — |
-  | vLLM-Metal `spec-off` (`4bit-spec-off`) | gate m1 m2 | **m3 m4 m5 m7**: the m3 retry was cut by the pause |
+  | vLLM-Metal `spec-off` (`4bit-spec-off`) | gate m1 m2 | **m3 m4 m5 m7**: three m3 attempts, none clean (below) |
 
 - **Working tree.** Nothing from the formal runs is committed or pushed yet. The results
   are untracked in `<fw>/raw/`, `<fw>/summary.md` and `<fw>/capabilities.md`.
@@ -28,12 +36,43 @@ when resuming.
     --framework vllm-metal --tag 4bit-spec-off --write`).
   - Quarantined in `raw/_unverified/` (gitignored, never publish):
     - llama.cpp: gate ×2 and the first m2 attempt;
-    - vLLM-Metal: the first m1 attempt (airportd), the first m3 attempt (sysmond, plus
-      another session's 50 s grep), and the partial second m3.
+    - vLLM-Metal:
+      - the first m1 attempt (airportd);
+      - m3 at 08:11 (sysmond, plus another session's 50 s grep);
+      - the partial m3 at 08:36, cut by the first pause;
+      - m3 at 09:49, which finished but is disturbed: one com.apple.WebKit.WebContent
+        process at 86 % for two samples at 09:52;
+      - that run's monitor TSV (`monitor-4bit-spec-off-20261018-094709.tsv`).
+
+      The 09:49 m3's per-trial values look consistent (vLLM decode ≈25 tok/s at 16K), but
+      it stays unpublished.
+- **Daytime use of the Mac adds disturbances.** Since about 09:50, WebKit content (Mail,
+  Safari, widgets), Activity Monitor (through sysmond) and app activity have tripped the
+  persistence rule more often than the night did. The user was asked to close Mail, the
+  browser and Activity Monitor during timed runs; otherwise expect more automatic repeats.
 - **Numbers stay local until the PRs.** The preliminary tables are in the untracked
   `<fw>/summary.md` files. They are not copied here, because this file is public, and one
   of them is known to be off: oMLX's M4 per-run totals may skip the error-flagged steps (issue 1
   below).
+- **New gate item G2b** (requested by the agent-benchmark session; do it before the PRs).
+  - **Why.** Real agents send screenshots *inside tool results*: Claude Code's MCP
+    screenshot is an image block in `tool_result`, and Hermes keeps the image in the
+    `role=tool` message. oMLX 0.3.9 used to drop such images. A framework that drops them
+    leaves computer use blind, which matters more than TTFT.
+  - **G2b, OpenAI path.**
+    1. The user asks "take a screenshot and tell me the code".
+    2. The assistant replies with `tool_calls` for `computer_screenshot`.
+    3. The `role=tool` message carries `[text, image_url data URI]`, using the same
+       1280×1024 `g2-verify` image as G2.
+
+    Control: the same image in a following user message. Pass: the code is read back.
+    Record `prompt_tokens` for both; a drop shows as roughly 1.3K fewer tokens than the
+    control.
+  - **New G3 sub-probe, Anthropic path.** `tool_use(computer_screenshot)` →
+    `tool_result` with `[image block, text]`, plus a control. Same pass rule.
+  - **Then.** Run pytest. Re-run the gate on llama.cpp (it needs one anyway), oMLX and
+    vLLM-Metal, about 15 min. If a framework fails G2b, flag it in the summary. M1 and M4
+    use `--screenshot-placement user` by default; `tool` exists in the harness if needed.
 - **Open issues to fix before the PRs.**
   1. **oMLX M4 errors.**
      - What happens: 22 of 63 requests ended with an `incomplete_tool_call` stream error,
@@ -175,31 +214,37 @@ Notes:
 ## Next steps (in order)
 
 1. **Resume Tier-1.** Message the agent-benchmark session first, then run
-   `scripts/gpu_lock.sh acquire "Tier-1 remainder: vLLM-Metal m3-m7, llama.cpp gate + anchor" 100`.
-   Then run the following in the background (`nohup … > logs/tier1-rest-<ts>.log 2>&1 &`),
-   and watch it with a Monitor on that log:
+   `scripts/gpu_lock.sh acquire "Tier-1 remainder: vLLM-Metal m3-m7, gates with G2b, anchor" 120`.
+   Start the vLLM part in the background (`nohup … > logs/tier1-rest-<ts>.log 2>&1 &`) and
+   watch it with a Monitor:
    ```
    scripts/run_framework.sh vllm-metal spec-off 4bit vllm 4bit-spec-off m3,m4,m5,m7 --spec-label off
-   sleep 120
+   ```
+   Expect about 60 min, more if daytime use triggers repeats.
+2. **Implement G2b and the G3 tool_result-image sub-probe** (above). Do this while no timed
+   segment runs, then run pytest. The agent-benchmark session ran a G2b probe on its own
+   oMLX 0.7.1rc1 at 10:14 and will send the results; use them as a reference.
+3. **Re-run the gates with G2b**, plus the anchor:
+   ```
    scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off gate
    scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-anchor m1
+   scripts/run_framework.sh omlx spec-off 4bit omlx 4bit-spec-off gate
+   scripts/run_framework.sh vllm-metal spec-off 4bit vllm 4bit-spec-off gate
    ```
-   Expect about 70 min. Each run_framework call holds its own heartbeat; a 2 min gap is
-   well under the ~7 min it takes the daemons to come back. Release the lock and tell the
-   peer when it is done.
-2. **Fix the open issues** above: summarize, the thinking-decode check, the anchor
+   Then release the lock and tell the peer.
+4. **Fix the open issues** above: summarize, the thinking-decode check, the anchor
    comparison and the redaction. Run pytest outside any timed segment.
-3. **Per-framework PRs** (`bench/llama.cpp`, `bench/omlx`, `bench/vllm-metal`):
+5. **Per-framework PRs** (`bench/llama.cpp`, `bench/omlx`, `bench/vllm-metal`):
    1. Commit `raw/*.jsonl`, `raw/*.md`, the monitor TSVs, `summary.md`, `capabilities.md`
       and the `env.md` updates.
    2. Open the PR and self-merge it.
    3. Update the README status table and this file.
-4. **References**, `--text-only`, one at a time with the lock: lithos-metal (`dspark`,
+6. **References**, `--text-only`, one at a time with the lock: lithos-metal (`dspark`,
    `no-draft`, `nvfp4`, with `--server-log`), mlx-lm, Core AI (`--profile generic`) and
    MLC-LLM. For MLC-LLM, run G1 first with the log open.
-5. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
+7. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
    A/B/A/B, and M6 (10–15 min for the candidates, 30 min for the finalists).
-6. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
+8. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
    session: gate pass/fail per framework, the metrics, the recommendation and the reasons.
 
 ## Shared with the other session
@@ -229,10 +274,10 @@ Rules for both sessions:
   - Nobody starts a model server or loads a model while the other side holds the lock.
 - Agent traces from the agent benchmark stay on this machine. They are never committed to the public serving-benchmark repo.
 
-State at the 2026-10-18 08:40 pause:
-- No lock is held. Nothing of ours listens on 8700–8705, and none of our heartbeats or
-  monitors run.
-- After resuming, local_ai-benchmark messages the agent-benchmark session before its first
+State at the 2026-10-18 10:14 pause:
+- At 10:14:38 the agent-benchmark session took the lock for its untimed G2b probe on 8500
+  (ETA 15 min). Nothing of ours runs: no server on 8700–8705, no heartbeat, no monitor.
+- After resuming, local_ai-benchmark messages the agent-benchmark session before its next
   lock.
 - Whether the agent benchmark switches from 8-bit to 4-bit is the user's call, made after the
   serving results come in.
