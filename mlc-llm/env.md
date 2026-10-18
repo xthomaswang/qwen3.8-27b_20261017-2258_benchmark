@@ -556,3 +556,29 @@ No existing branch, upstream or the user's, covers G1, G3, G4 or the hybrid pref
 5. G5 and M6: 64K prompt prefill time and peak memory.
 6. Optional crash probes, never during timed runs: the radix prefix cache with an M1-shaped
    request pair, and two concurrent requests at `max_num_sequence=2`.
+
+## 3.2a Result after re-signing (2026-10-18 01:30, run with the user's approval)
+
+- **Re-signing.** The ad-hoc re-sign from §3.2 ran over the 10 TVM/MLC dylibs in
+  `serving/mlc-llm_bench/.venv`. `codesign -v` is clean, and the `SIGKILL (Code Signature
+  Invalid)` is gone.
+- **`import tvm` now aborts instead** (exit 134, `SIGABRT`).
+  - faulthandler stack: `tvm/__init__.py:126` → `_autoload_backends` →
+    `_load_builtin_backends` → ctypes load of `tvm_runtime_extra`.
+  - Crash report: `abort() called` from
+    `___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED`, inside a static
+    initializer of `libtvm_runtime_extra.dylib`, run by dyld.
+- **The two wheels ship different TVM runtimes.**
+  - `tvm/lib/libtvm_runtime.dylib` is 2,696,064 B; `mlc_llm/lib/libtvm_runtime.dylib` is
+    2,300,000 B.
+  - `libtvm_runtime_extra.dylib` is the same size in both.
+- **Disabling backend autoload doesn't help.**
+  - With `TVM_DEVICE_BACKEND_AUTOLOAD=0`, `import tvm` succeeds, but `import mlc_llm` then
+    fails: `Library not loaded: @rpath/libtvm_runtime_extra.dylib` from
+    `mlc_llm/libmlc_llm_module.dylib`.
+  - This matches the dotfiles note (`3_新机状态与使用.md`, "nightly … 导入时发生原生库 abort").
+- **Verdict.** The nightly wheels can't run on this machine (macOS 27.2 beta 26B5101f).
+  MLC-LLM needs a source build of TVM + MLC-LLM against the local toolchain (§3.3). Estimate:
+  1–2 h of build and debugging, no GPU needed. That is not "simple support", and the
+  framework would still fail the agent gate (G1, G3, G4). **MLC-LLM is parked as blocked**
+  unless the user asks for the source build.
