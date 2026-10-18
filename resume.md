@@ -1,9 +1,46 @@
 # Resume — current progress
 
-Updated: 2026-10-18 14:55 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 16:30 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 14:55): blocked on suggestd; G2b answered (unverified)
+## Current state (2026-10-18 16:30): Tier-1 remainder running, suggestd paused
+
+- **suggestd.** The user killed it at 16:13. launchd relaunched it on demand, and within a
+  minute it was back on its harvesting queue at ~99 % (`caffeinate -u` had no effect).
+  - `launchctl disable gui/501/com.apple.suggestd` took effect (it is still in force), but
+    it does not unload the loaded job: after the next `killall`, launchd started it again
+    on an xpc event (runs = 3).
+  - `launchctl bootout` was refused under SIP, with error 150.
+  - At 16:19 the user ran `kill -STOP 43674`. The process shows state T at 0 % CPU, and
+    launchd keeps it as `running` and starts no other copy. METHODOLOGY.md §3 records the
+    window.
+  - **Restore after the segment, in this order:** `kill -CONT 43674`, then
+    `launchctl enable gui/501/com.apple.suggestd`. The user runs both (we ask). The
+    agent-benchmark session wants to know when it is restored; it reuses this method for
+    its own timed runs.
+- **Chain** (`scripts/run_tier1.sh vllm-rest llama-gate llama-anchor omlx-gate`, lock ETA
+  150 min):
+  1. vLLM-Metal gate (with G2b), then m3, m4, m5 and m7, all on one server;
+  2. the llama.cpp gate;
+  3. the llama.cpp M1 anchor (tag `4bit-mtp-off-anchor`);
+  4. the oMLX gate.
+- **Anchor acceptance**, fixed before the run. The 04:35 llama.cpp M1 had warm
+  4.361 s (4.066–4.432) and cold 31.205 s (31.127–31.362). The earlier runs count as
+  comparable with today's if both of these hold:
+  - the anchor's warm median lies within 4.066–4.432 s;
+  - its cold median lies within ±2 % of 31.205 s (30.58–31.83 s).
+
+  The machine is quieter now than at 04:35, when suggestd was still alive, so a slightly
+  faster anchor is expected. A slower one beyond the band means drift; investigate before
+  publishing any cross-session comparison.
+- **PR notes:**
+  - The new vLLM gate supersedes the 07:50 verified gate (summarize uses the latest
+    verified run); decide whether the superseded file is committed.
+  - The anchor writes its own section into `llama.cpp/summary.md`; publish it as a
+    validation row or keep it here.
+  - Commit the `run_tier1.sh` change with the results.
+
+## State at 14:55: blocked on suggestd; G2b answered (unverified)
 
 - **14:22–14:52 session.**
   - The user said continue, so we took the lock at 14:22.
