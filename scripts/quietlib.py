@@ -118,8 +118,19 @@ def peer_port_up() -> bool:
 
 
 def thermal_warnings() -> list[str]:
+    """Throttling indicators from `pmset -g therm`, judged by value: a speed or scheduler limit
+    below 100, or a nonzero warning level. 'Note: No ... recorded' lines and other status lines
+    are not warnings."""
     _, out = run(["pmset", "-g", "therm"])
-    return [ln.strip() for ln in out.splitlines() if ln.strip() and not ln.strip().startswith("Note: No ")]
+    warn = []
+    for ln in (x.strip() for x in out.splitlines()):
+        if not ln or ln.startswith("Note: No "):
+            continue
+        lim = re.search(r"(CPU_Speed_Limit|CPU_Scheduler_Limit|GPU_Speed_Limit)\s*=\s*(\d+)", ln)
+        lvl = re.search(r"(?i)warning level\D*(\d+)", ln)
+        if (lim and int(lim.group(2)) < 100) or (lvl and int(lvl.group(1)) > 0):
+            warn.append(ln)
+    return warn
 
 
 def gpu() -> tuple[int, float]:

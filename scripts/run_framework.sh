@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 fw=$1 variant=$2 tier=$3 profile=$4 tag=$5 suites=$6; shift 6
 UNV=${RUN_UNVERIFIED:-0}
 if [ "$UNV" = 1 ]; then WAIT_S=${QUIET_WAIT_S:-20} PRE_S=20 HP_S=10 RETRIES=0
-else WAIT_S=${QUIET_WAIT_S:-600} PRE_S=${QUIET_PRESERVE_S:-300} HP_S=90 RETRIES=${QUIET_RETRIES:-1}; fi
+else WAIT_S=${QUIET_WAIT_S:-600} PRE_S=${QUIET_PRESERVE_S:-300} HP_S=60 RETRIES=${QUIET_RETRIES:-1}; fi
 PY=/usr/bin/python3
 ts() { date '+%T'; }
 grep -q '^holder: local_ai-benchmark session' "$HOME/Developer/mlsys/experiments/.gpu-lock" 2>/dev/null \
@@ -37,6 +37,7 @@ vdir="$raw" unv_arg="" move_arg="--move"
 [ "$UNV" = 1 ] && { vdir="$raw/_unverified" unv_arg="--unverified" move_arg=""; mkdir -p "$vdir"; }
 echo "$(ts) run_framework: $fw $variant $tier, tag $tag, suites $suites"
 caffeinate -u -t 86400 -w $$ > /dev/null 2>&1 &
+sleep "${USER_ACTIVE_SETTLE_S:-45}"   # declaring activity sets off a ~30 s "user returned" burst; let it pass
 # Before loading anything: the GPU must be idle with no other model resident.
 if ! scripts/quiet_check.sh --allow-pid $$ --settle "$PRE_S" --max-gpu-gb "${QUIET_MAX_GPU_GB_IDLE:-6}" > "logs/quiet-$fw-$tag.preserve" 2>&1; then
   echo "$(ts) machine not quiet before serving:"; sed 's/^/  /' "logs/quiet-$fw-$tag.preserve"
@@ -60,8 +61,11 @@ curl -s -m 900 "$base/v1/chat/completions" -H 'Content-Type: application/json' \
 
 mon_tsv="$vdir/monitor-$tag-$(date +%Y%m%d-%H%M%S).tsv"
 events="logs/monitor-$fw-$tag.events"
-"$PY" -I scripts/quietlib.py monitor --log "$mon_tsv" --interval 10 --allow-pid $$ --until-pid $$ > "$events" 2>&1 &
-mon=$!
+start_monitor() {
+  "$PY" -I scripts/quietlib.py monitor --log "$mon_tsv" --interval 10 --allow-pid $$ --until-pid $$ >> "$events" 2>&1 &
+  mon=$!
+}
+: > "$events"; start_monitor
 
 rc=0 verified=0
 for s in $(printf '%s' "$suites" | tr ',' ' '); do
@@ -69,6 +73,7 @@ for s in $(printf '%s' "$suites" | tr ',' ' '); do
   while :; do
     attempt=$((attempt + 1))
     kill -0 "$pid" 2>/dev/null || { echo "$(ts) server $pid is gone; stopping before $s"; rc=1; break 2; }
+    kill -0 "$mon" 2>/dev/null || { echo "$(ts) monitor had exited (see $events); restarted"; start_monitor; sleep 11; }
     if ! scripts/quiet_check.sh --allow-pid $$ --settle "$WAIT_S" > "logs/quiet-$fw-$tag.last" 2>&1; then
       echo "$(ts) not quiet after ${WAIT_S}s before $s. Last check:"; sed 's/^/  /' "logs/quiet-$fw-$tag.last"
       [ "$UNV" = 1 ] || { echo "$(ts) stopping"; rc=1; break 2; }
