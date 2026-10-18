@@ -72,7 +72,16 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
     - no foreign process above 25 % CPU, and foreign CPU in total ≤ 150 %;
     - no build, convert or download tools running, and no thermal warning.
 
-    The check's output is stored in every raw file's header.
+    The check's output is stored in every raw file's header. The limits were calibrated on
+    2026-10-18 04:24 on the idle machine, with the user-activity assertion held and the
+    three Claude sessions resident:
+
+    | Reading | Idle baseline | Limit |
+    | --- | --- | --- |
+    | Load average | 1.3–1.8 | 2.5 |
+    | Foreign CPU, total | 12–50 % | 150 % |
+    | GPU utilization | 0–2 % | 10 % |
+    | GPU memory in use | 0.9–1.1 GB | 6 GB |
   - **During each suite,** a monitor samples every 10 s into
     `<framework>/raw/monitor-<tag>-<ts>.tsv`, which is committed with the results. The suite
     counts as disturbed on either of these:
