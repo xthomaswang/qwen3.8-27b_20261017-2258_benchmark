@@ -44,8 +44,7 @@ when resuming.
         process at 86 % for two samples at 09:52;
       - that run's monitor TSV (`monitor-4bit-spec-off-20261018-094709.tsv`).
 
-      The 09:49 m3's per-trial values look consistent (vLLM decode ≈25 tok/s at 16K), but
-      it stays unpublished.
+      The 09:49 m3 stays unpublished, however consistent its trials look.
 - **Daytime use of the Mac adds disturbances.** Since about 09:50, WebKit content (Mail,
   Safari, widgets), Activity Monitor (through sysmond) and app activity have tripped the
   persistence rule more often than the night did. The user was asked to close Mail, the
