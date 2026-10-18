@@ -398,3 +398,20 @@ a missing head degrades silently to target-only decoding.
   (`omlx/cli.py:47-85`, `omlx/cli.py:287-293`). Use the env vars from this file.
 - The 8-bit checkpoint declares `mtp_num_hidden_layers: 1` but ships no MTP weights. A
   spec-on run with `mtp_enabled` on this checkpoint would measure target-only decoding.
+
+## Smoke test, 2026-10-18 01:16 (4-bit, manual, not timed)
+
+`scripts/omlx_configure.sh` set `max_context_window: 131072` for both models.
+`scripts/serve.sh omlx spec-off 4bit` started the server, which lists both models (`mlx-community--Qwen3.8-27B-4bit` and `-8bit`, `max_model_len` 131072). It loads a model on the first request.
+
+These are first-request timings, not benchmark numbers.
+
+| Probe | Result |
+| --- | --- |
+| Streaming text | OK. The first request includes the model load (TTFT 17.4 s). |
+| Streaming tool call | OK: `get_weather {"city": "Paris", "unit": "c"}`. The call arrives as one delta at the end (TTFT = end-to-end = 1.81 s). |
+| Image 1280×1024, random code | OK. Answered `VERIFY: WK3-DEG`; 1308 prompt tokens; TTFT 2.69 s. |
+| Thinking on | Reasoning returned. |
+| `/v1/messages`, no thinking field | HTTP 200; the response starts with a `thinking` block. |
+
+**To check in the formal run.** The agent-benchmark session reports that oMLX 0.7 applies sampling defaults from `generation_config` (e.g. `top_k 20`). Verify that request-level `temperature=0` is honoured.

@@ -1,46 +1,50 @@
 # Resume — current progress
 
-Updated: 2026-10-18 00:40 (local). Work resumed at 00:20 on a good network (HF ~30 MB/s),
+Updated: 2026-10-18 01:25 (local). Work resumed at 00:20 on a good network (HF ~30 MB/s),
 and large downloads are allowed again. Rewrite this after every major phase, and read it
 first when resuming.
 
-## Current state (2026-10-18 00:40)
+## Current state (2026-10-18 01:25)
 
-- **Downloads running in the background.** `scripts/download_models.sh core gguf extra`,
-  log in `logs/download.log`. Progress:
-  - DSpark head: complete.
-  - MLX 4-bit: downloading.
-  - GGUF, then NVFP4 and BF16: still to come.
-  - The 0-byte `.incomplete` files dated 23:12 are leftovers from the interrupted first
-    attempt.
-- **oMLX native kernels built.** All five are available, including `qwen35_prefill`
-  with the NAX variant.
-- **Smoke tests.** Manual, not timed, on the 8-bit checkpoint.
-  - **vLLM-Metal: OK.**
-    - The checkpoint as shipped fails at startup: its `processor_config.json` names
-      `Qwen3VLImageProcessor`, which is not a transformers class.
-    - Workaround: a metadata-only view at `~/Developer/mlsys/models/derived/Qwen3.8-27B-8bit-procfix`.
-    - Text, streamed tool calls, image read-back, and thinking all work.
-      `/v1/messages` thinks by default.
-  - **mlx-lm: as predicted.**
-    - Text and tool calls work; each tool call arrives as a single delta at the end.
-    - Images → 404. `/v1/messages` → 404.
-  - Details are in each `env.md`.
-- **Running agents.**
-  - Harness completion: fixtures, suites, `run-all`, `summarize`.
-  - Serve/lock scripts: `scripts/serve.sh`, `gpu_lock.sh`, `omlx_configure.sh`, the lithos
-    `lm_head` patch, and `make_procfix.sh`.
-- **Lock and ports.** No GPU lock held; no server on 8700–8705.
+- **Checkpoints.** All are downloaded (`done: core gguf extra` at 01:10): 8-bit, 4-bit,
+  DSpark head, GGUF + MTP + mmproj, NVFP4, BF16.
+- **Manual smoke tests (not timed) on all five servers are done.** Results are in each
+  `env.md` under "Smoke test":
+  - **llama.cpp** (4-bit, MTP off/on): text, streamed tool calls, image read-back,
+    thinking and `/v1/messages` all OK. MTP draft acceptance 0.5–0.9; mmproj and MTP
+    coexist.
+  - **oMLX** (4-bit): text, tool calls (one final delta), image, thinking and
+    `/v1/messages` all OK. The model loads on first request (17 s).
+  - **vLLM-Metal** (8-bit): OK, through the procfix view.
+  - **lithos-metal** (4-bit and NVFP4, DSpark): text, tool calls and `/v1/messages`
+    text OK. Images → 400; thinking is hard-wired off. 4-bit needs the local patch, now
+    applied on branch `bench/mlx-head-rename` (73b8cb6).
+  - **mlx-lm** (8-bit): text and tool calls OK. Images and `/v1/messages` → 404.
+- **Incident, fixed.** At 00:28 the procfix view's `README.md` symlink caused a write
+  through into the shared HF blob (the 8-bit model card). Restored at 01:15 with a
+  hash-verified original. The peer verified all 19 files against HF. Views now use
+  regular files for anything we write.
+- **Scripts done** (`scripts/README.md`): `serve.sh`, `gpu_lock.sh` (atomic),
+  `wait_ready.sh`, `stop_server.sh`, `omlx_configure.sh`, `make_procfix.sh`,
+  `hf_snapshot.py`.
+- **Still running:**
+  - the harness agent (fixtures, suites, `run-all`, `summarize`);
+  - the MLC-LLM feasibility agent;
+  - the Core AI setup agent (a tiny-model toolchain check done under our lock,
+    01:04–01:09).
+- **Lock and servers.** No lock held; no servers running.
+- **Peer scheduling.** The agent-benchmark session wants a 1–2 h GPU slot for its harness
+  smoke test. It was offered the GPU now (01:22), with our formal runs after.
 
 | # | Phase | Status |
 | --- | --- | --- |
-| 0 | Plan, repo scaffold, methodology | **done**. Public repo: github.com/xthomaswang/qwen3.8-27b_20261017-2258_benchmark |
-| 1 | Framework installs + flag research | **done** (oMLX kernels built 00:25) |
-| 1b | Manual smoke tests (8-bit) | vLLM-Metal **done**, mlx-lm **done**. oMLX waits on `omlx_configure.sh`. lithos-metal and llama.cpp wait on downloads. |
+| 0 | Plan, repo scaffold, methodology | **done** |
+| 1 | Framework installs + flag research | **done**. MLC-LLM and Core AI were added 2026-10-18; their agents are running. |
+| 1b | Manual smoke tests | **done** for llama.cpp, oMLX, vLLM-Metal, lithos-metal, mlx-lm |
 | 2 | Harness + fixtures | **in progress** (agent) |
 | 3 | Gate G1–G5 per framework (live, via harness) | pending |
 | 4 | Metrics M1–M7 per framework; one `bench/<framework>` PR each, self-merged | pending |
-| 5 | Summary PR, plus a Chinese summary to the agent-benchmark session | pending |
+| 5 | Summary PR + Chinese summary to the agent-benchmark session | pending |
 
 ## Frameworks: installs and expected gate results (from source; verify live)
 

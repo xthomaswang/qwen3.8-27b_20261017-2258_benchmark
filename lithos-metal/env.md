@@ -129,12 +129,16 @@ Downloads therefore happen before any format error can surface. Use
 **Answer: would a locally re-quantized MLX affine 4-bit g64 checkpoint be accepted?**
 
 **No. As shipped, v0.1.2 rejects it, and it equally rejects the official
-`mlx-community/Qwen3.8-27B-4bit`.** Downloading the 16 GB official repo would not get
-lithos running either.
+`mlx-community/Qwen3.8-27B-4bit`.** With `lithos-metal/lm_head_rename.patch` (below), the
+official 4-bit binds, so no local re-quantization is needed.
 
 - The MLX layout stores the untied head as `language_model.lm_head.{weight,scales,biases}`.
-  The 4-bit index was fetched as metadata only. It has the same 2180-tensor layout as the
-  local 8-bit and is uniform 4-bit g64 with no per-layer overrides.
+- **Verified 2026-10-18 on the cached official 4-bit** (snapshot
+  `10c35caafbb80f7dc6a7a432cdd11af10a6d4818`, complete: 3 shards, 16.05 GB). Its
+  `model.safetensors.index.json` has exactly the 8-bit's 2180-tensor key set, including
+  `language_model.lm_head.{weight,scales,biases}` (shard 3). `tie_word_embeddings` is false,
+  quantization is uniform affine 4-bit g64 (`mode: affine`, no per-layer overrides), and there
+  are 0 `mtp.*` tensors. So the official 4-bit uses the name lithos rejects.
 - The qwen3_5 package renames only `language_model.model.*` → `model.language_model.*`
   (`monolith/models/qwen3_5/weights.py:35-41`). It then asks for `lm_head.weight`
   (`monolith/models/qwen3_5/model.py:57-60`), and `bind_formats` raises KeyError
@@ -146,6 +150,11 @@ lithos running either.
   not caught by `cli.py:16`, so the user sees a traceback.
 - With a one-line rename (`language_model.lm_head.*` → `lm_head.*`), all 498 slab tensors
   bind. The script is in §12.
+- **Measured (no GPU) on the official 4-bit headers, 2026-10-18,** with the §12 script loading
+  the patched `mlx_rename` from the patch: as installed,
+  `KeyError "checkpoint has no tensor group for 'lm_head.weight'"`; with the patch,
+  `OK {'int4_affine': 498}`, `mlx_adapt` engaged, untied head. Unlike the 8-bit, these are real
+  int4 tensors. Packing was not run (it reads every weight and writes a ~15 GB pack).
 - **With that fix, a local 4-bit g64 checkpoint should pass format binding.**
   Bind-OK is not the same as pack-OK. `bind_formats` checks only names and dtypes. Packing
   additionally enforces `weight == [N, K/8]`, group 64, and `K % 256 == 0`
@@ -157,12 +166,27 @@ lithos running either.
   That holds as long as the local checkpoint keeps MLX's norm convention: the unquantized
   norm, `A_log`, `dt_bias`, and conv tensors are copied byte-for-byte from the 8-bit (MLX
   folds `1 +` into the norms and lithos subtracts it back, `weights.py:53-66`).
-- **Two ways to apply the fix** (choose one; neither is applied yet):
-  1. Write the local checkpoint's head as `lm_head.{weight,scales,biases}`. lithos will then
-     work, but mlx-lm/mlx-vlm will not load that copy.
-  2. Make a local, uncommitted one-line patch in `monolith/models/qwen3_5/weights.py:mlx_rename`
-     that maps `language_model.lm_head.` → `lm_head.`, then reinstall. This is cleaner and
-     keeps one checkpoint for all MLX stacks. Record it as a deviation in provenance.
+- **The fix: `lithos-metal/lm_head_rename.patch`** in this repo, against v0.1.2 (`46b2bc4`).
+  **Not applied.** It edits `mlx_rename` in `monolith/models/qwen3_5/weights.py` in place: one
+  constant, two lines and the docstring, so that `language_model.lm_head.*` maps to `lm_head.*`.
+  - Editing the function rather than wrapping it matters. `bind_checkpoint_formats` runs
+    `mlx_adapt` (the norm un-fold) only when `model.checkpoint_rename is mlx_rename`.
+    `SafetensorsDir` applies that same function for binding, packing (`nn/pack_plan.py`) and
+    `tools/pack_weights.py`.
+  - One checkpoint keeps serving every MLX stack. The alternative, rewriting a local copy's head
+    as `lm_head.*`, would break mlx-lm and mlx-vlm for that copy.
+  - Record the patch as a deviation in provenance. `scripts/serve.sh` writes the checkout's
+    `git describe` and modified files into each `.cmd` file and log header.
+  - `scripts/serve.sh lithos-metal <dspark|no-draft> 4bit` refuses to start (exit 4) until the
+    installed `weights.py` contains the rename.
+
+  ```bash
+  EXP=~/Developer/mlsys/experiments/qwen3.8-27b_20261017-2258_benchmark
+  cd ~/Developer/mlsys/serving/lithos-metal
+  git apply --check "$EXP/lithos-metal/lm_head_rename.patch" && git apply "$EXP/lithos-metal/lm_head_rename.patch"
+  uv pip install --python .venv/bin/python -e '.[serve]'   # the current install is not editable (§1)
+  # revert: git apply -R "$EXP/lithos-metal/lm_head_rename.patch", then reinstall the same way
+  ```
 - **The 8-bit (`mlx-community/Qwen3.8-27B-8bit`) cannot be served at all.** `detect_format`
   labels any U32 weight with scales and biases as `int4_affine`, with no `bits` check
   (`checkpoint.py:45-46`). The test above bound all 498 tensors of the 8-bit as int4_affine.
@@ -365,9 +389,10 @@ HF_HUB_OFFLINE=1 .venv/bin/lithos-metal serve --model nvidia/Qwen3.8-27B-NVFP4 -
 HF_HUB_OFFLINE=1 .venv/bin/lithos-metal serve --model nvidia/Qwen3.8-27B-NVFP4 --local-files-only --no-draft \
   --host 127.0.0.1 --port 8704 --max-context 131078 --pack "$PACKS" 2>&1 | tee "$EXP/logs/lithos-nvfp4-nodraft.log"
 
-# B. MLX affine 4-bit g64 row: needs the lm_head fix (§4) and a local checkpoint (no download);
-#    B1 also needs the DSpark head (1.1 GB).
-M4B=~/Developer/mlsys/models/Qwen3.8-27B-4bit-g64-from8bit   # converted artifacts go under mlsys/models
+# B. MLX affine 4-bit g64 row: needs the lm_head fix (§4, lm_head_rename.patch). The official
+#    mlx-community/Qwen3.8-27B-4bit is cached (2026-10-18), so no local checkpoint is needed;
+#    B1 also needs the DSpark head (cached).
+M4B=mlx-community/Qwen3.8-27B-4bit   # resolved offline from the HF cache, like the NVFP4 repo id in A
 # B1. DSpark on: the head is NOT auto-paired for this target, so pass it explicitly
 HF_HUB_OFFLINE=1 .venv/bin/lithos-metal serve --model "$M4B" --draft LithosAI/Qwen3.8-27B-DSpark-NVFP4 \
   --local-files-only --served-model-name Qwen3.8-27B-4bit --host 127.0.0.1 --port 8704 \
@@ -378,6 +403,10 @@ HF_HUB_OFFLINE=1 .venv/bin/lithos-metal serve --model "$M4B" --no-draft --local-
   --max-context 131078 --pack "$PACKS" 2>&1 | tee "$EXP/logs/lithos-4bit-nodraft.log"
 ```
 
+- `scripts/serve.sh lithos-metal <dspark|no-draft> <nvfp4|4bit>` runs exactly A1, A2, B1 and
+  B2. It checks that the checkpoints are complete, the GPU lock and the ports first, and writes
+  the log, the `.cmd` file and the pidfile under `logs/`. Extra flags go after `--`; argparse
+  keeps the last value, so `-- --max-context 32768` overrides the context for a smoke launch.
 - If 131072 misbehaves, fall back to `--max-context 65536` (G5 minimum) and record why.
 - `--prefill-chunk-size 512` is the upstream-tuned value for the NVFP4 recipe. It is not
   a speculation setting. Run defaults first, then optionally a 512 variant for M2, and
@@ -386,8 +415,9 @@ HF_HUB_OFFLINE=1 .venv/bin/lithos-metal serve --model "$M4B" --no-draft --local-
   compiles. Expect several minutes before `lithos-metal ready` (`serve.py:425-426`).
 
 Header-only bind check before any serve (no GPU; it reads safetensors headers only). Save the
-script outside the checkout, then run `.venv/bin/python -I bind_check.py "$M4B"`. The first line
-should print `OK` after fix option 1 (or after option 2 plus reinstall), and the second line always `OK`.
+script outside the checkout, then run it on a snapshot directory (not a repo id):
+`.venv/bin/python -I bind_check.py "$HF_HOME/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/10c35caafbb80f7dc6a7a432cdd11af10a6d4818"`.
+The first line should print `OK` once the patch is applied and installed, and the second line always `OK`.
 
 ```python
 import collections, sys
@@ -410,6 +440,10 @@ Result on the real 8-bit snapshot's headers (2026-10-17):
 
 - `[as installed] FAILED: KeyError "checkpoint has no tensor group for 'lm_head.weight'"`
 - `[with lm_head rename] OK {'int4_affine': 498}`. These tensors are 8-bit, mislabeled; packing them would fail.
+
+Result on the official 4-bit snapshot's headers (2026-10-18, with the definitions from
+`lm_head_rename.patch` instead of the lambda): the same `KeyError` as installed, then
+`OK {'int4_affine': 498}`. Here the tensors really are int4.
 
 ## 13. Gate expectations
 
@@ -440,7 +474,7 @@ lithos. Thinking is already off server-side, so the stripped requests are still
 ## 15. Caveats
 
 - `serve` downloads the target and the head unless offline (§3). Always set `HF_HUB_OFFLINE=1` and `--local-files-only`.
-- The DSpark head in the HF cache is a paused partial download: metadata only, 3 shards at 0 bytes. Resume with `hf download LithosAI/Qwen3.8-27B-DSpark-NVFP4` when the user allows.
+- The DSpark head finished downloading on 2026-10-18 at 00:24 (snapshot `b169bc4c`, 3 shards, 1.14 GB). Three 0-byte `.incomplete` blobs from the paused attempt are still in its `blobs/`. They are harmless, and the cache is add-only, so they stay. `scripts/hf_snapshot.py` checks the real files against `trees/<commit>.json` and ignores them.
 - The MLX int4 path is untuned and its numerics are unvalidated on the 27B. The head's acceptance was trained and measured against NVFP4/BF16 target features. Expect lower acceptance on int4.
 - Tested upstream on a 48 GB M5 Max 40c running macOS 26.x, not macOS 27.2 or 128 GB. The chip backend is chosen by core count and family (`setup.py:64-67`).
 - Usage is not cached-aware. Tool-call failures surface as 502 or SSE error events.
@@ -452,29 +486,27 @@ lithos. Thinking is already off server-side, so the stripped requests are still
 source research above is complete. The local-checkpoint question is answered and
 confirmed with a header-only bind test.
 
-**Not done:** no GPU run, no pack built, no downloads, and no lm_head fix applied.
+**Not done:** no GPU run, no pack built, and the lm_head fix is not applied (it is ready as
+`lithos-metal/lm_head_rename.patch`).
+
+**Downloads (2026-10-18):** all cached and complete. These are `mlx-community/Qwen3.8-27B-4bit`
+(`10c35caa`), `LithosAI/Qwen3.8-27B-DSpark-NVFP4` (`b169bc4c`) and `nvidia/Qwen3.8-27B-NVFP4`
+(`482ca0f3`, 21.9 GB). `scripts/serve.sh lithos-metal … --dry-run` reports A1 and A2 ready.
+B1 and B2 wait only for the patch.
 
 **Resume steps:**
 
 1. Re-verify the install: `cd ~/Developer/mlsys/serving/lithos-metal && .venv/bin/lithos-metal --version`.
    If the venv is missing, rerun the §1 commands (about 2 min, served from the uv cache).
-2. Choose an lm_head fix (§4, option 1 or 2). For option 2, edit `mlx_rename`, then
-   `uv pip install --python .venv/bin/python -e '.[serve]'`. Do not commit.
-3. Produce the local 4-bit g64 checkpoint into `~/Developer/mlsys/models/...`: dequantize the
-   8-bit, re-quantize with mlx (group 64, bits 4), and copy non-quantized tensors byte-for-byte.
-   Then run the §12 bind check against it.
-4. **Minimum downloads by row:**
-
-   | Row | Downloads needed |
-   | --- | --- |
-   | B2 (int4, `--no-draft`) | none |
-   | B1 (int4 + DSpark) | the DSpark head, 1.1 GB, resumable |
-   | A (NVFP4) | + `nvidia/Qwen3.8-27B-NVFP4`, 22.0 GB |
-
-   Downloading `mlx-community/Qwen3.8-27B-4bit` (16 GB) does not help: it needs the same fix.
-5. The first GPU step is a short B2 launch at `--max-context 32768`, under the GPU lock,
-   with a 64-token request. This checks pack build, tokens, and memory before going to
-   131072, then running G1/G3–G5.
+2. For the 4-bit rows (B1, B2), apply `lithos-metal/lm_head_rename.patch` and reinstall (§4). Do
+   not commit it in the lithos checkout. The NVFP4 rows (A1, A2) do not need it.
+3. No local 4-bit g64 checkpoint is needed any more. The official 4-bit is cached and binds
+   with the patch (§4, measured on its headers).
+4. Run the §12 bind check on the 4-bit snapshot once the patch is installed. The first line must
+   print `OK`.
+5. The first GPU step is a short B2 launch at `--max-context 32768`, under the GPU lock, with a
+   64-token request: `scripts/serve.sh lithos-metal no-draft 4bit -- --max-context 32768`. This
+   checks pack build, tokens and memory before going to 131072, then running G1/G3–G5.
 
 **Open questions:**
 
@@ -489,3 +521,26 @@ confirmed with a header-only bind test.
 | Accepted | Rejected |
 | --- | --- |
 | `temperature: 0` (integer), `reasoning_effort: "none"`, Anthropic with no `thinking` | `chat_template_kwargs`, `reasoning_effort: "medium"`, a Chat `image_url` part, Anthropic `thinking: {type: "adaptive"}`, an Anthropic `image` block |
+
+## Smoke test, 2026-10-18 01:18 (manual, not timed)
+
+**Setup**
+- The benchmark patch `lm_head_rename.patch` is applied in `~/Developer/mlsys/serving/lithos-metal` on the local branch `bench/mlx-head-rename` (commit 73b8cb6, on v0.1.2).
+- The package was reinstalled with `--reinstall-package lithos-metal --no-cache`.
+- Requests omit `chat_template_kwargs` and `reasoning_effort`.
+
+**Startup**
+- 4-bit + DSpark: ready in 28 s. The target and draft packs were created under `.cache/packs`, using `backend=m5_max_40c` and `verify=8`.
+- NVFP4 + DSpark: first start took 378 s to build its packs; later starts reuse them.
+
+First-request timings, not benchmark numbers:
+
+| Probe | 4-bit (`mlx-community/Qwen3.8-27B-4bit`) + DSpark | NVFP4 (`nvidia/Qwen3.8-27B-NVFP4`) + DSpark |
+| --- | --- | --- |
+| Streaming text | OK, TTFT 0.58 s | OK, TTFT 0.18 s |
+| Streaming tool call | OK: `get_weather {"city": "Paris", "unit": "c"}`, end-to-end 1.05 s (5 target steps for 38 tokens) | OK, TTFT 2.38 s, end-to-end 2.57 s |
+| Image | HTTP 400 (`content` must be a string): G2 fails | HTTP 400 |
+| Thinking | Hard-wired off; no reasoning | — |
+| `/v1/messages`, text only | HTTP 200, text `ready` | HTTP 200 |
+
+Per-request timings (`prefill_gpu_ms`, `decode_gpu_ms`, `first_text_ms`, `cached_prompt_tokens`) appear in the server log as `Generation: {...}` lines.

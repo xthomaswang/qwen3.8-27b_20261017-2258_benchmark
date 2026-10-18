@@ -353,3 +353,19 @@ draft-mtp` + `--spec-draft-n-max`, and MTP is turned off by omitting `-md` and p
 - The MTP KV sizing.
 - What `-fa auto` resolves to.
 - The `/v1/messages` section of `tools/server/README.md`.
+
+## Smoke test, 2026-10-18 01:13 (4-bit UD-Q4_K_M, manual, not timed)
+
+`scripts/serve.sh llama.cpp mtp-off|mtp-on 4bit` (b11717). The server was ready in 6 s
+(mtp-off) and 2 s (mtp-on, files already in page cache). These are first-request timings,
+not benchmark numbers.
+
+| Probe | mtp-off | mtp-on |
+| --- | --- | --- |
+| Streaming text | OK, TTFT 1.03 s | OK, TTFT 0.21 s |
+| Streaming tool call | OK, `get_weather {"city":"Paris","unit":"c"}`, streamed (TTFT 1.66 s, end-to-end 2.67 s) | OK (TTFT 0.89 s, end-to-end 1.35 s) |
+| Image 1280×1024, random code | OK, read `WK3-DEG`, 1308 prompt tokens, TTFT 2.82 s | OK, TTFT 2.57 s |
+| Thinking on | reasoning returned | — |
+| `/v1/messages`, no thinking field | HTTP 200, response starts with a `thinking` block | — |
+
+- **MTP drafting.** The draft model `MTP/mtp-Qwen3.8-27B-Q4_0.gguf` loads alongside the mmproj; the two coexist. Per-request draft acceptance in the log was 0.50–0.90, with a mean accepted length of 2.5–3.7 tokens per step. The tool call reached 27/30, mean length 3.70.
