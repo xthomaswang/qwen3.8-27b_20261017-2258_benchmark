@@ -63,20 +63,25 @@ Notes:
 
 ## Checkpoints and downloads
 
-- **On disk.** Only `mlx-community/Qwen3.8-27B-8bit` (28 GB) is complete. It has a vision
-  tower and no MTP tensors.
-- **Downloads are paused** at the user's request: the network measured ~0.5 MB/s. The
-  partial blobs stay in the HF cache:
-  - unsloth GGUF: 512 MB of 18.8 GB
-  - DSpark head: just started
-  - MLX 4-bit: not started
-- **Resuming** is the user's call. When they say so, run `scripts/download_models.sh core gguf`.
-- **Fallbacks without downloads:**
-  - lithos-metal 4-bit: re-quantize the 8-bit locally, add the head rename, run
-    `--no-draft`.
-  - llama.cpp: a local conversion is a conditional go, but costly. It needs a custom
-    dequant script, a torch venv, ~126 GB of peak disk and 2–4 h of work, and the result
-    has no MTP head.
+- **On disk.**
+  - `mlx-community/Qwen3.8-27B-8bit` (28 GB): has a vision tower, no MTP tensors.
+  - `LithosAI/Qwen3.8-27B-DSpark-NVFP4` (1.1 GB): complete since 2026-10-18 00:24.
+- **Downloading.** With the user's go-ahead, `scripts/download_models.sh core gguf extra`
+  resumed at 2026-10-18 00:23 on a ~30 MB/s network and runs the groups in order:
+  1. MLX 4-bit
+  2. GGUF (UD-Q4_K_M + MTP + mmproj-F16)
+  3. NVFP4
+  4. BF16
+
+  Pause these downloads during timed segments.
+- **Derived views.** Metadata-only views live in `~/Developer/mlsys/models/derived/`. They
+  are needed because the mlx-community `processor_config.json` names a class that
+  transformers doesn't have; see `vllm-metal/env.md` §8.
+  - The 8-bit view exists.
+  - The 4-bit view comes from `scripts/make_procfix.sh` once that checkpoint is complete.
+- **Local fallbacks.** No longer needed now that downloads are allowed. Both are
+  documented in the env.md files: lithos-metal 4-bit via re-quantization, and llama.cpp
+  via conversion.
 
 ## Decisions (user)
 
