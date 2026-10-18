@@ -157,11 +157,16 @@ except Exception:
     ls "$WORKDIR/omlx/custom_kernels/$k/"_ext*.so >/dev/null 2>&1 || missing="$missing $k"
   done
   if [ -z "$missing" ]; then ok "native kernel modules built (5 of 5 _ext*.so)"; else need "native kernels not built:$missing (omlx/env.md resume step 2)"; fi
-  ENVV+=(OMLX_BASE_PATH="$base" OMLX_HOST=127.0.0.1 OMLX_PORT="$PORT" OMLX_MODEL_DIR="$models"
+  # oMLX 0.7 writes ~/.omlx/bin/omlx-cluster-python and scans ~/.omlx/cluster/runtime on every start,
+  # whatever OMLX_BASE_PATH says (omlx/cluster/worker_shim.py, cluster/launch.py). ~/.omlx belongs to the
+  # agent-benchmark session, so this process gets its own HOME; every other path here is absolute.
+  mkdir -p "$base/home"
+  ENVV+=(HOME="$base/home" OMLX_BASE_PATH="$base" OMLX_HOST=127.0.0.1 OMLX_PORT="$PORT" OMLX_MODEL_DIR="$models"
          OMLX_HF_CACHE_ENABLED=false PYTHONUNBUFFERED=1)
   CMD=("$exe" serve --base-path "$base" --headless)
   MODEL_ID=$id
   PROV+=("$(dist_versions "$WORKDIR/.venv" omlx mlx mlx_lm mlx_vlm)")
+  NOTES+=("HOME is isolated to .bench-home/home so the cluster shim and reaper never touch ~/.omlx")
   NOTES+=("models load on the first request (none is pinned); hf-bench lists every linked tier, so send exactly \"$id\"")
 }
 

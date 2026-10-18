@@ -427,3 +427,24 @@ override a request-level `temperature: 0`.
 `reasoning_effort: "none"` sent without `chat_template_kwargs.enable_thinking` does **not**
 disable thinking (seen in the quick gate run). Hermes-style requests send both fields and
 behave correctly.
+
+## HOME isolation (2026-10-18 02:25)
+
+On every server start, oMLX 0.7.1rc1 writes into the real home directory, whatever
+`OMLX_BASE_PATH` is set to:
+- **Cluster shim.** It writes `~/.omlx/bin/omlx-cluster-python`
+  (`omlx/cluster/worker_shim.py`, called unconditionally from `server.py:520`).
+- **Launch reaper.** It reaps orphaned distributed launches from `~/.omlx/cluster/runtime`
+  (`cluster/launch.py:895`).
+
+`~/.omlx` belongs to the agent-benchmark session, so `scripts/serve.sh` now starts our
+oMLX with `HOME=<base>/home`. Every other path it passes is absolute, and `HF_HOME` is
+explicit.
+
+**Earlier starts wrote to the shared home.** Before this change, our smoke run (01:16)
+and quick validation (02:02) each rewrote that shim to point at our venv. The other
+session's oMLX restored its own version at 02:17, and the file has not been touched by us
+since.
+
+**Bonjour is off.** Bonjour and peer discovery only start when distributed inference is
+enabled in settings. It is off in `.bench-home`.
