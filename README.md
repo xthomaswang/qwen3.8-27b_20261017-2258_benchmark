@@ -22,7 +22,7 @@ speculative decoding, a 20-step trajectory, and concurrency. See
 | [lithos-metal](lithos-metal/) | v0.1.2 | pending | — |
 | [vLLM-Metal](vllm-metal/) | v0.31.0 | pending | — |
 | [mlx-lm](mlx-lm/) (`mlx_lm.server` + direct) | 0.32.2 | pending | — |
-| [MLC-LLM](mlc-llm/) (`mlc_llm serve`, added 2026-10-18) | source build of main (in progress) | The nightly wheels abort on import on macOS 27.2, so it is being built from source. Tool calls go through xgrammar structured output (`response_format`) because there is no Qwen XML tool parser. No `/v1/messages`. Prefix cache must be off for the hybrid model. | — |
+| [MLC-LLM](mlc-llm/) (`mlc_llm serve`, added 2026-10-18) | source build: mlc-llm `8978ea9a` + TVM `201fa000` (the nightly wheels abort on import here) | expected fail: no Qwen XML tool parser (tool calls go through xgrammar structured output), no `/v1/messages`, no per-request thinking switch; prefix cache must be off for the hybrid model. Text-only reference row | — |
 | [Core AI](coreai/) (`llm-server` + `llm-benchmark`) | apple/coreai-models `3b25d93` | expected fail (images dropped, no `/v1/messages`). Text-only reference row | — |
 
 ## Layout
