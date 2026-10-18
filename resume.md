@@ -137,13 +137,15 @@ Two Claude Code sessions work in ~/Developer/mlsys and share one GPU:
   - `experiments/personal-agent-bench`
   - `agent/`
   - `serving/omlx` (oMLX 0.3.9) and `~/.omlx`
+  - `serving/omlx-v0.7.1rc1` (a git worktree of `serving/omlx`) and `~/.omlx-0.7`
   - `models/hf`
   - ports 8500 and 8600-8699
 - **local_ai-benchmark session** (resume: `~/Developer/mlsys/experiments/qwen3.8-27b_20261017-2258_benchmark/resume.md`) owns:
   - that repo
-  - `serving/{llama.cpp,omlx_0.7,lithos-metal,vllm-metal,mlx-lm}`
-  - `models/hf-bench`
+  - `serving/{llama.cpp,omlx_0.7,lithos-metal,vllm-metal,mlx-lm,mlc-llm_bench,coreai-models}`
+  - `models/{hf-bench,derived,mlc,coreai}`
   - ports 8700-8705
+- **Untouched by both** (the user's own work): `serving/mlc-llm`, `serving/mlc-llm_2a`, `serving/mlc-llm_2b`, `experiments/coreai`. Read-only access is fine.
 
 Rules for both sessions:
 - Neither session edits the other's files or stops the other's processes.
