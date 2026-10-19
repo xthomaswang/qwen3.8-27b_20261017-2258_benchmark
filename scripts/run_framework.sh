@@ -62,6 +62,12 @@ trap 'cleanup; exit 130' INT TERM
 sleep 2
 scripts/wait_ready.sh "$port" 1800 || { scripts/stop_server.sh "$fw" --children; exit 3; }
 pid=$(cat "logs/$fw.pid")
+# lithos reports cached tokens only in its server log; point the harness at this run's log.
+slog_arg=""
+if [ "$profile" = lithos ]; then
+  slog=$(ls -t "logs/$fw-$variant-$tier-"*.log 2>/dev/null | head -1)
+  [ -n "$slog" ] && slog_arg="--server-log $ROOT/$slog"
+fi
 flags=$(grep -v '^#' "logs/$fw-$variant-$tier.cmd" | tail -1 | sed "s|$HOME|~|g")
 version=$(grep -m1 '# framework:' "logs/$fw-$variant-$tier.cmd" | sed 's/.*# framework: *//')
 echo "$(ts) server pid $pid; process tree: $(pgrep -P "$pid" | tr '\n' ' ')"
@@ -101,7 +107,7 @@ for s in $(printf '%s' "$suites" | tr ',' ' '); do
     (cd harness && uv run agentbench run-all --profile "$profile" --base-url "$base" --model "$model" \
       --framework "$fw" --framework-version "$version" --launch-flags "$flags" --tag "$tag" \
       --server-pid "$pid" --suites "$s" --preflight \
-      --preflight-cmd "$ROOT/scripts/quiet_check.sh --settle $HP_S --allow-pid $$ --min-battery $MIN_BATT" $unv_arg "$@" $sargs) > "logs/run-$fw-$tag-$s.log" 2>&1
+      --preflight-cmd "$ROOT/scripts/quiet_check.sh --settle $HP_S --allow-pid $$ --min-battery $MIN_BATT" $unv_arg $slog_arg "$@" $sargs) > "logs/run-$fw-$tag-$s.log" 2>&1
     src=$?
     grep -E "^(preflight|.* failed:)" "logs/run-$fw-$tag-$s.log" | sed 's/^/  /'
     sleep 11   # let the monitor take one more sample after the suite's last write

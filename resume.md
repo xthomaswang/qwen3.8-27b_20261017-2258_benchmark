@@ -3,6 +3,28 @@
 Updated: 2026-10-18 22:15 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
+## Overnight block (planned 2026-10-18 23:00, the user's choice)
+
+- **Chain:** `scripts/run_tier2.sh`, run in this order:
+  1. M6: llama.cpp `mtp-on` and oMLX for 30 min each, vLLM-Metal for 15 min;
+  2. the 8-bit rows (oMLX, vLLM-Metal, mlx-lm), each with the gate plus M1, M4 and M7;
+  3. the text-only references: mlx-lm 4-bit, then lithos-metal `dspark`, `no-draft` and
+     `nvfp4`.
+
+  Lock ETA 540 min. The log is named in `logs/tier1.current`.
+- **Before it starts:** the user pauses suggestd (43674) and mediaanalysisd (93568) with
+  `kill -STOP`. spotlightknowledged was not running at 22:23; it starts on demand. The
+  chain starts at 23:00 only once suggestd is paused or idle.
+- **In the morning:** the user resumes them with `kill -CONT 43674 93568`. Tell
+  `localmelo_main` and the agent-benchmark session when the lock is released.
+- **Deferred to a daytime block,** because these need someone at the machine:
+  - Core AI, which is not in `serve.sh` (`coreai/env.md`);
+  - MLC-LLM, whose G1 runs first with the log open;
+  - the direct-call A/B/A/B;
+  - a possible llama.cpp Q8_0 row: the GGUF is 29.05 GB, MTP works through the separate
+    `MTP/mtp-Qwen3.8-27B-Q4_0.gguf` draft, and the agent-benchmark session asked. The
+    user decides.
+
 ## Current state (2026-10-18 22:15): Tier-1 published (PRs #1–#3)
 
 - **Tier-1 is done.** PRs #1 (llama.cpp), #2 (oMLX) and #3 (vLLM-Metal) are merged. Each
