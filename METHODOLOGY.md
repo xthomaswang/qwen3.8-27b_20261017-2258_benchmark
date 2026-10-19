@@ -89,8 +89,9 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
       took the battery from 95 % to 6 % by 05:15, and it stayed at 6–14 % until 08:40.
       Near 6–7 % the system capped power:
       - llama.cpp decode fell by 22 % within a minute (05:16);
-      - vLLM-Metal's 64K cold prefill took 187 s at 07:56–08:11, against 163 s at full
-        charge.
+      - vLLM-Metal's cold prefill (M2) took 14–28 % longer than at full charge (07:56–08:11).
+
+      Those runs are quarantined, so only these relative effects are reported.
 
       `pmset -g therm` showed nothing.
     - **The rule.** Before the server starts and before each suite, the runner waits, with
