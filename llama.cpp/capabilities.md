@@ -1,0 +1,40 @@
+# llama.cpp: capabilities
+
+<!-- agentbench:begin gate 4bit-mtp-off -->
+## Gate G1-G5 + G2b, tag `4bit-mtp-off`
+
+Run 2026-10-18 19:51; profile `llamacpp`; framework version `b11717 (848bbda9), clean`; harness `e495e19ac5`. Raw: `raw/gate-4bit-mtp-off-20261018-194702.jsonl`.
+
+| ID | Requirement | Result | Detail |
+| --- | --- | --- | --- |
+| G1 | OpenAI chat completions + SSE + Qwen3.8 tool calls | **PASS** | fs_read_file {"path":"docs/setup.md"}; incremental (7 deltas); first call chunk at 24.57 s, e2e 25.30 s; finish=tool_calls |
+| G2 | Image input (base64 PNG image_url), code read back | **PASS** | read Y3N-9JT correctly; prompt_tokens=1319 |
+| G2b | Image inside a tool result (role=tool image_url, Hermes path), code read back | **PASS** | tool-message image: read Y3N-9JT; prompt_tokens=1920; control (user message): read Y3N-9JT; prompt_tokens=1935 |
+| G3 | Anthropic /v1/messages: text, tool_use, image, image in tool_result | **PASS** | text ok, tool_use ok, image ok, tool_result image ok; text ok ('ready'); reasoning 117 chars in thinking_block / text ok ('ready'); reasoning 82 chars in thinking_block |
+| G4 | Thinking control (enable_thinking / reasoning_effort) | **PASS** | Hermes off: no reasoning; Hermes on: reasoning 116 chars in reasoning_content \| G4.effort-none-only: accepted; no reasoning \| G4.effort-high: accepted; reasoning 152 chars in reasoning_content \| G4.effort-minimal: error: HTTP 500: {"error":{"code":500,"message":"\n------------\nWhile executing CallExpression at line 64, column 28 in source:\n...', 'low') %}↵        {{- raise_exception('Unexpected reasoning effort ' ~ reason...\n                                           ^\nError: Jinja Exception: Unexpected reasoning effort m \| G4.default: accepted; reasoning 152 chars in reasoning_content |
+| G5 | Context >= 64K: a 64,000-token prompt completes | **PASS** | 64000-token prompt completed: prompt_tokens=64000, TTFT 154.9 s; configured context: 131072; peak server footprint 18.0 GiB |
+
+### Probes
+
+| Probe | Request shape | HTTP | Outcome |
+| --- | --- | --- | --- |
+| G1.hermes | Hermes (reasoning_effort=none, enable_thinking=false) | HTTP 200 | fs_read_file {"path":"docs/setup.md"} |
+| G2.image | Hermes, image_url data URI + question | HTTP 200 | read Y3N-9JT correctly; prompt_tokens=1319 |
+| G2b.tool-image | Hermes, screenshot as image_url inside the role=tool message | HTTP 200 | read Y3N-9JT; prompt_tokens=1920 |
+| G2b.user-control | Hermes, same screenshot in a following user message (control) | HTTP 200 | read Y3N-9JT; prompt_tokens=1935 |
+| G3.text-adaptive | Claude Code, thinking=adaptive | HTTP 200 | text ok ('ready'); reasoning 117 chars in thinking_block |
+| G3.text-nothinking | Claude Code, thinking=absent | HTTP 200 | text ok ('ready'); reasoning 82 chars in thinking_block |
+| G3.tool_use | Claude Code, tools, thinking absent | HTTP 200 | tool_use fs_read_file {'path': 'docs/setup.md'}; incremental (7 deltas); first call chunk at 29.76 s, e2e 30.49 s |
+| G3.image | Claude Code, image block (base64) | HTTP 200 | read Y3N-9JT |
+| G3.tool_result-image | Claude Code, screenshot as image block inside tool_result | HTTP 200 | read Y3N-9JT; input_tokens=1963 |
+| G3.tool_result-control | Claude Code, same image after the tool_result (control) | HTTP 200 | read Y3N-9JT; input_tokens=1411+cache_read 567 (sum 1978) |
+| G4.hermes-off | reasoning_effort=none, chat_template_kwargs={'enable_thinking': False} | HTTP 200 | no reasoning |
+| G4.hermes-on | reasoning_effort=medium, chat_template_kwargs={'enable_thinking': True} | HTTP 200 | reasoning 116 chars in reasoning_content |
+| G4.kwargs-off | chat_template_kwargs={'enable_thinking': False} | HTTP 200 | no reasoning |
+| G4.kwargs-on | chat_template_kwargs={'enable_thinking': True} | HTTP 200 | reasoning 152 chars in reasoning_content |
+| G4.effort-none-only | reasoning_effort=none | HTTP 200 | accepted; no reasoning |
+| G4.effort-high | reasoning_effort=high, chat_template_kwargs={'enable_thinking': True} | HTTP 200 | accepted; reasoning 152 chars in reasoning_content |
+| G4.effort-minimal | reasoning_effort=minimal, chat_template_kwargs={'enable_thinking': True} | HTTP 500 | error: HTTP 500: {"error":{"code":500,"message":"\n------------\nWhile executing CallExpression at line 64, column 28 in source:\n...', 'low') %}↵        {{- raise_exception('Unexpected reasoning effort ' ~ reason...\n                                           ^\nError: Jinja Exception: Unexpected reasoning effort m |
+| G4.default | no thinking fields | HTTP 200 | accepted; reasoning 152 chars in reasoning_content |
+| G5.cold-64000 | Hermes off, cold prompt with nonce | HTTP 200 | 64000-token prompt completed: prompt_tokens=64000, TTFT 154.9 s; configured context: 131072; peak server footprint 18.0 GiB |
+<!-- agentbench:end gate 4bit-mtp-off -->
