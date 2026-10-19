@@ -340,3 +340,21 @@ timings, not benchmark numbers.
 | `/v1/messages`, no `thinking` field | HTTP 200, but the response starts with a `thinking` block (template default) |
 
 `usage.prompt_tokens_details` reports `cached_tokens` and `created_cache_tokens`.
+
+## Measurement environment (Tier-1 results, 2026-10-18)
+
+- **Machine.** MacBook Pro `Mac17,7`, Apple M5 Max, 128 GB. macOS 27.2 (build 26B5101f).
+  Xcode 27.1 (build 27A9275) is the default `xcode-select`, and it was never changed.
+- **Power.** AC through a 96 W USB-C adapter, in High Power mode (`powermode 2`). The adapter
+  cannot supply this machine under sustained GPU load, so the battery drains during runs.
+  The battery rule keeps it at 40 % or more at each suite start and above 20 % throughout
+  (METHODOLOGY.md, "Battery"). Suites measured on a low battery were re-run.
+- **Quiet machine.** As in METHODOLOGY.md. The monitor TSVs next to the results hold every
+  10 s sample; v3 rows also record the battery level and the thermal pressure level.
+- **Paused system daemons.** suggestd was stopped with SIGSTOP from 16:19, and
+  mediaanalysisd and spotlightknowledged from 17:29:33. All three were resumed at 22:02.
+  They were busy with backlogs that the user-activity heartbeat could not defer
+  (METHODOLOGY.md, "Quiet machine").
+- **Provenance.** Each raw file's header records the server flags, the framework version, the
+  harness commit and the pre-flight output.
+- **Launch** (`scripts/serve.sh vllm-metal spec-off 4bit`): `vllm serve models/derived/Qwen3.8-27B-4bit-procfix --max-model-len 131072 --gpu-memory-utilization 0.55 --max-num-seqs 4 --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --enable-prefix-caching --enable-prompt-tokens-details`.
