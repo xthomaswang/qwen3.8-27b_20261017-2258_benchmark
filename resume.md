@@ -1,65 +1,41 @@
 # Resume — current progress
 
-Updated: 2026-10-18 18:30 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-18 22:15 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-18 18:30): battery re-run running
+## Current state (2026-10-18 22:15): Tier-1 published (PRs #1–#3)
 
-- **Finding: the night's timed runs ran on a nearly empty battery.**
-  - The machine is on a 96 W USB-C adapter, which cannot supply it under sustained GPU load,
-    so the battery drains even on AC.
-  - Back-to-back timed runs drained it from 95 % (02:00) to 6 % (05:15): first the
-    agent-benchmark session's harness smoke (02:17–04:15), then ours from 04:20. It stayed
-    at 6–14 % until 08:40.
-  - Near 6–7 % the system capped power:
-    - llama.cpp 16K thinking decode fell from ~21.5 to 16.8 tok/s within a minute at
-      05:16; 32K thinking ran at 15.7 tok/s;
-    - vLLM-Metal's M2 64K took 187 s at 07:56–08:11, against 163 s (G5) at full charge.
-  - `pmset -g therm` showed nothing. Thermal pressure (`notifyutil`) reached level 2 at
-    night and in the afternoon alike, so it is not the cause.
-  - **So "thinking decode is ~25 % slower" (open issue 2) was the power cap.**
-- **Pre-registered check for the llama.cpp `mtp-off` M3 re-run.** The pre-cap trials
-  (05:13–05:15) gave 21.5–22.0 tok/s at 16K with thinking on, against 23.1 with it off;
-  a 5–7 % gap is expected from the longer context during generation.
-  - Issue closed if 16K thinking ≥ 20.5 tok/s and 32K thinking ≥ 18.5 tok/s.
-  - A real effect, to investigate server-side, if 16K ≤ 18 or 32K ≤ 17.
-  - In between: look closer before deciding.
-- **Quarantined** (moved to `raw/_unverified/`, with `README-battery.txt`). These ran with
-  the battery below 30 %:
-  - llama.cpp: m1, m2, m3 and m4 for `mtp-off`; m1, m3 and m4 for `mtp-on`; m5 for `conc`,
-    with its monitor TSV.
-  - oMLX: the night gate and m1–m5.
-  - vLLM-Metal: the 07:46 gate, m1 and m2, with their monitor TSV.
+- **Tier-1 is done.** PRs #1 (llama.cpp), #2 (oMLX) and #3 (vLLM-Metal) are merged. Each
+  framework directory holds:
+  - the verified raw files, redacted with `scripts/redact.py`;
+  - the monitor TSVs;
+  - `summary.md`, opening with a hand-written "Read first" block outside the generated
+    markers;
+  - `capabilities.md`;
+  - an `env.md` section on the measurement environment;
+  - `raw/superseded/`, for the gates that ran before the G3 fix.
 
-  Kept: the M7 runs (correctness only, no timing), the afternoon runs (battery 91–100 %),
-  and the night monitor TSVs that cover M7.
-- **Tooling** (METHODOLOGY.md, "Battery"):
-  - quietlib: a battery below 20 % marks a sample DISTURBED; the battery level and the
-    thermal pressure level are logged in every row (TSV v3); new `battery --min --wait`
-    subcommand; `check --min-battery`.
-  - run_framework.sh waits up to 90 min, with the server idle and charging, until the
-    battery is ≥ 40 %, both before the server starts and before each suite.
-- **Harness fixes** (88 tests pass):
-  - G3's drop check sums `input_tokens + cache_creation_input_tokens +
-    cache_read_input_tokens`. All three frameworks split Anthropic usage, not only oMLX.
-    With the sums, nothing is dropped: the tool_result image and the control differ by
-    10–15 tokens.
-  - M4 reports the slope with and without step 1. For oMLX it goes from −0.136 to
-    +0.068 s/step once step 1 is left out.
-- **Chain**, started at about 18:28 under a lock with a 300 min ETA:
-  `scripts/run_tier1.sh vllm-rerun omlx-rerun llama-off-rerun llama-on-rerun llama-conc-rerun`
-  (the log is named in `logs/tier1.current`). The gates are re-run too, so their fragments
-  carry the G3 fix.
-- **Daemons still paused:** suggestd (43674) since 16:19; mediaanalysisd (1221) and
-  spotlightknowledged (50910) since 17:29:33. **Restore after the chain**, the user running
-  `kill -CONT 43674 1221 50910`, then `launchctl enable gui/501/com.apple.suggestd`. Tell
-  both other sessions.
-- **Peers:** `localmelo_main` stopped its work at 18:18 and is waiting for our release
-  message. The agent-benchmark session knows about the re-run, and it adopts the battery
-  rule for its own timed runs.
-- **Stay idle during timed suites:** only Monitor re-arms, and no `log show` or greps.
+  README.md has the status table and a Tier-1 overview.
+- **Battery re-run, 18:27–21:58.** All suites verified; the battery never fell below 63 %.
+  - Repeats, all automatic and quarantined: systemstats, ANECompilerService, and
+    power-adapter dropouts at 19:09:44, 19:10:17 (about 5 s each) and 19:57:19–20:01:01.
+  - oMLX m2 needed a third run (`run_tier1.sh omlx-m2`).
+  - **The thinking-decode issue is closed**, against the pre-registered band. llama.cpp
+    thinking-on decode equals thinking-off: 23.7 against 24.0 tok/s at 16K, and 22.0 against
+    22.0 at 32K. The night's gap was the power cap.
+- **The daemons were resumed at 22:02:05**, by the user in the agent-benchmark session
+  (`kill -CONT`, plus `launchctl enable` for suggestd).
+  - mediaanalysisd exited on resume; launchd started PID 93568.
+  - spotlightknowledged exited cleanly and is started on demand.
+  - suggestd went back to its queue at ~96 %.
+  - Pause them again, with their new PIDs, before the next timed segment if they are busy.
+- **Quarantined absolute numbers stay private.** Public text gives the power cap's effect
+  only in relative terms (METHODOLOGY.md, "Battery"). Older commits still hold some
+  night-time figures; do not rewrite history without the user's approval.
+- **Privacy.** quietlib shows non-Apple app bundles as `<app>` (by `CFBundleIdentifier`).
+  Before committing older files, run `scripts/redact.py --check` on them.
 
-## State at 18:00 (superseded at 18:20: the night suites were quarantined; see above)
+## State at 18:00 (superseded: the night suites were quarantined at 18:20 and re-run by 21:58)
 
 - **Tier-1 is fully measured.** Every suite below passed the pre-flight and the monitor
   check. The lock was released at 17:53:11, and both other sessions were told.
@@ -418,36 +394,18 @@ Notes:
 
 ## Next steps (in order)
 
-1. **Restore the paused daemons** (the user; asked at 17:55): `kill -CONT 43674 1221 50910`,
-   then `launchctl enable gui/501/com.apple.suggestd`. Fill the time into METHODOLOGY.md §3
-   and tell the agent-benchmark session. Pause them again only for a later timed segment,
-   and only if they are busy then.
-2. **Fix the open issues** (no GPU; run pytest afterwards):
-   1. G3 drop check, Anthropic path: compare the sum `input_tokens +
-      cache_creation_input_tokens + cache_read_input_tokens`. Check whether the raw jsonl
-      keeps the full usage; if it does, recompute instead of re-running.
-   2. Thinking-mode decode: llama.cpp is ~25 % slower with thinking on, but vLLM-Metal is
-      not (M3 at 16K: 25.5 tok/s against 26.3). Check llama.cpp's request shape and
-      server-side `timings`.
-   3. M4: report the slope with and without step 1 (oMLX step 1 is a near-full re-prefill).
-   4. Redaction: show `/Applications/` paths as `<app>` in quietlib, and redact third-party
-      app names in the monitor TSVs and pre-flight blocks before committing.
-3. **Per-framework PRs** (`bench/llama.cpp`, `bench/omlx`, `bench/vllm-metal`):
-   1. Commit `raw/*.jsonl`, `raw/*.md`, the monitor TSVs, `summary.md`, `capabilities.md`,
-      the `env.md` updates and `scripts/run_tier1.sh`.
-   2. Open the PR and self-merge it.
-   3. Update the README status table and this file.
-4. **Interim Chinese summary to the agent-benchmark session**: the Tier-1 comparison (gate
-   pass/fail and M1–M7 for the three candidates), since the user is choosing a serving
-   stack now. The final summary follows step 7.
-5. **References**, `--text-only`, one at a time with the lock (and the 10 min notice to
-   `localmelo_main`): lithos-metal (`dspark`, `no-draft`, `nvfp4`, with `--server-log`),
+1. **Interim Chinese summary to the agent-benchmark session** (Tier-1: gates and M1–M7 for
+   the three candidates, with a recommendation). Send it after the PRs; done at 22:20 if
+   the message log says so.
+2. **References**, `--text-only`, one at a time with the lock. First give the 10 min notice
+   to `localmelo_main`, check the battery (≥ 40 %), and pause busy daemons with the user's
+   consent. Then run lithos-metal (`dspark`, `no-draft`, `nvfp4`, with `--server-log`),
    mlx-lm, Core AI (`--profile generic`) and MLC-LLM. For MLC-LLM, run G1 first with the
    log open.
-6. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
+3. **The rest:** 8-bit rows (oMLX, vLLM-Metal, mlx-lm; M1/M4/M7), the direct-call
    A/B/A/B, and M6 (10–15 min for the candidates, 30 min for the finalists).
-7. **Summary.** Open the summary PR, and send the Chinese summary to the agent-benchmark
-   session: gate pass/fail per framework, the metrics, the recommendation and the reasons.
+4. **Summary.** Open the summary PR, and send the final Chinese summary to the
+   agent-benchmark session.
 
 ## Shared with the other session
 
