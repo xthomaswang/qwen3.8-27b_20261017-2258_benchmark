@@ -38,6 +38,18 @@
   ~150 ms. The decode rate is unaffected.
 - **The SSD prefix cache persists across restarts,** which is why G1 shows a 1.3 s first call.
   The cold measurements (M1 cold, M2, G5, M4 step 0) carry nonces, so they are not affected.
+- **M6, 30 min:** no latency drift (0.99), and the server tree grew by 2 GiB. The 72 "errors"
+  in 189 requests are `incomplete_tool_call` stream errors, on the steps where the 150-token
+  cap cuts a multi-call output. llama.cpp and vLLM-Metal hit `finish_reason=length` on the
+  same steps (2, 10, 11, 13, 18 and 19), so these are not server failures.
+- **8-bit (`8bit-spec-off`), 2026-10-19:**
+  - G2b fails as at 4-bit: the image is dropped (639 prompt tokens) and the model refuses;
+  - G5 at 64K: TTFT 110.7 s, 36.0 GiB;
+  - M1: warm 2.77 s, cold 24.6 s;
+  - M4: about 257 s per run, and step 1 is again a re-prefill (16.0 s);
+  - M7: 23/24 (`m7-07-enum`).
+
+  The 8-bit M3 is still running.
 - **Superseded gate.** The 17:43 gate is in `raw/superseded/`.
 
 <!-- agentbench:begin summary 4bit-spec-off -->
@@ -139,6 +151,22 @@ Source: `raw/m5-4bit-spec-off-20261018-194140.jsonl`.
 | 1 | 3 | 5.481 (5.402-5.537) | 1.97 | 7.522 (7.444-11.984) | 14996 | 0 | 0 | 2.893 (2.845-2.953) |
 | 2 | 3 | 7.141 (7.110-7.466) | 2.56 | 10.809 (10.736-15.861) | 14996 | 0 | 0 | 6.284 (2.735-9.772) |
 
+### M6 memory and stability
+
+Source: `raw/m6-4bit-spec-off-20261019-062357.jsonl`.
+
+| Metric | Value |
+| --- | --- |
+| footprint at 64,000 tokens: server tree peak GiB | 24.00 |
+| footprint: system used peak GiB | 69.17 |
+| loop minutes / runs (complete) / requests | 30.0 / 9 (8) / 188 |
+| errors | 72 |
+| server tree GiB start / peak / end | 24.00 / 30.00 / 26.00 |
+| server tree growth GiB | 2.00 |
+| system used GiB start / end | 69.16 / 71.33 |
+| e2e last run / first run (median per step) | 0.99 |
+| e2e s over all requests | 7.709 (6.121-24.407) |
+
 ### M7 tool-call correctness
 
 Source: `raw/m7-4bit-spec-off-20261018-074110.jsonl`.
@@ -172,3 +200,27 @@ Passed 24/24.
 | m7-23-image-click | call after an image | pass | - |
 | m7-24-calendar | nested objects | pass | - |
 <!-- agentbench:end summary 4bit-spec-off -->
+
+<!-- agentbench:begin summary 8bit-spec-off -->
+## Results, tag `8bit-spec-off`
+
+### M3 short structured decode
+
+Source: `raw/m3-8bit-spec-off-20261019-100622.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| off | off | 16,000 | 50 | 3 | 18.2 (18.1-18.2) | 0.326 (0.324-0.334) | 3.020 (3.018-3.037) | 50 | 3/3 | 164.3 | 169.0 | 2.78 |
+| off | off | 16,000 | 150 | 3 | 18.3 (18.2-18.3) | 0.318 (0.315-0.321) | 8.480 (8.441-8.512) | 150 | 3/3 | 163.4 | 172.5 | 2.94 |
+| off | off | 16,000 | 300 | 3 | 18.3 (18.2-18.3) | 0.316 (0.312-0.321) | 16.680 (16.624-16.739) | 300 | 3/3 | 163.6 | 171.9 | 2.97 |
+| off | off | 32,000 | 50 | 3 | 17.7 (17.7-17.7) | 0.452 (0.440-0.463) | 3.217 (3.205-3.228) | 50 | 3/3 | 168.4 | 175.2 | 2.78 |
+| off | off | 32,000 | 150 | 3 | 17.7 (17.7-17.8) | 0.453 (0.450-0.455) | 8.863 (8.832-8.889) | 150 | 3/3 | 169.0 | 174.5 | 2.94 |
+| off | off | 32,000 | 300 | 3 | 17.6 (17.6-17.7) | 0.458 (0.449-0.460) | 17.390 (17.383-17.426) | 300 | 3/3 | 169.6 | 179.2 | 2.97 |
+| off | off | 64,000 | 50 | 3 | 16.4 (16.3-16.4) | 0.736 (0.728-0.737) | 3.728 (3.725-3.732) | 50 | 3/3 | 181.9 | 193.4 | 2.78 |
+| off | off | 64,000 | 150 | 3 | 16.3 (16.3-16.3) | 0.727 (0.726-0.728) | 9.857 (9.847-9.870) | 150 | 3/3 | 183.0 | 190.9 | 2.94 |
+| off | off | 64,000 | 300 | 3 | 16.2 (16.0-16.3) | 0.732 (0.729-0.770) | 19.139 (19.105-19.483) | 300 | 3/3 | 184.3 | 199.2 | 2.97 |
+| off | on | 16,000 | 1000 | 3 | 18.1 (18.0-18.2) | 3.215 (3.177-3.273) | 58.448 (58.251-58.603) | 1000 | 3/3 | 164.5 | 173.1 | 2.99 |
+| off | on | 16,000 | 2000 | 3 | 18.0 (17.6-18.0) | 3.246 (3.161-3.286) | 114.259 (113.988-116.920) | 2000 | 3/3 | 167.2 | 172.9 | 2.99 |
+| off | on | 32,000 | 1000 | 3 | 17.4 (17.4-17.4) | 2.969 (2.944-2.974) | 60.346 (60.344-60.411) | 1000 | 3/3 | 172.7 | 183.6 | 2.99 |
+| off | on | 32,000 | 2000 | 3 | 17.3 (17.3-17.3) | 2.994 (2.977-3.044) | 118.224 (118.221-118.314) | 2000 | 3/3 | 173.2 | 182.8 | 2.99 |
+<!-- agentbench:end summary 8bit-spec-off -->
