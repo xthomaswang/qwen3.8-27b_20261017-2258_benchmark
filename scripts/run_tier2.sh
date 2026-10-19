@@ -14,6 +14,8 @@
 #     text-only (commit c9581b1): mlxlm-8bit-fix mlxlm-4bit-fix lithos-dspark-fix
 #     lithos-nodraft-fix lithos-nvfp4-fix. lithos has no prefix cache (one M4 run ~40 min), so
 #     its M4 runs once.
+#   sampling at the model's own settings (temperature 1.0, top_p 0.95, top_k 20): q8-on-t1
+#     q8-off-t1 q4-on-t1 q4-off-t1 (M3 at 16K/32K, cap 150 and thinking cap 1000; M4 for MTP on)
 # Between steps the machine idles COOL_S seconds (default 120) so each server starts cool.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
@@ -23,6 +25,10 @@ steps=${*:-"lithos-dspark lithos-nodraft lithos-nvfp4 m6-llama m6-omlx m6-vllm o
 export SUITE_ARGS_m7="--trials 1"   # M7 is deterministic at temperature 0; one pass per prompt
 ( while kill -0 $$ 2>/dev/null; do caffeinate -u -t 1; sleep 60; done ) > /dev/null 2>&1 &   # user activity across the cool-downs too (see run_framework.sh)
 rf=scripts/run_framework.sh
+# The model's own sampling (Qwen3.8 generation_config), as the agent benchmark sends it: MTP
+# acceptance is lower than under greedy decoding, so the *-t1 steps re-measure the MTP gain.
+SAMP='{"temperature": 1.0, "top_p": 0.95, "top_k": 20}'
+M3_T1="--contexts 16000,32000 --caps 150 --think-contexts 16000,32000 --think-caps 1000"
 first=1 failed=""
 for step in $steps; do
   [ "$first" = 1 ] || { echo "$(ts) cool-down ${COOL_S}s"; sleep "$COOL_S"; }
@@ -43,6 +49,10 @@ for step in $steps; do
     llama-q8-off)   $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off gate,m1,m3,m4,m7 --spec-label off ;;
     llama-q8-on)    $rf llama.cpp mtp-on 8bit llamacpp 8bit-mtp-on m1,m3,m4,m7 --spec-label on ;;
     llama-q8-off-m3) $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off m3 --spec-label off ;;
+    q8-on-t1)       SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-on 8bit llamacpp 8bit-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
+    q8-off-t1)      SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off-t1 m3 --spec-label off --extra-body "$SAMP" ;;
+    q4-on-t1)       SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-on 4bit llamacpp 4bit-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
+    q4-off-t1)      SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-t1 m3 --spec-label off --extra-body "$SAMP" ;;
     mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
     mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
     lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;

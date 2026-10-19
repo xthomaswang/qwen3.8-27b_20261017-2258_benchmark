@@ -35,9 +35,9 @@ Tier-1 at 4-bit (the agent-backend candidates; details in each framework's `summ
 | M4 20-step trajectory, total | 250 / **201 s** | 206 s | 250 s |
 | M5 main step with 2 helpers (vs solo) | 2.49× (`conc`, MTP off) | 2.56× | **2.44×** |
 | M7 tool-call correctness | 23/24 | 24/24 | 24/24 |
-| G5 peak footprint at 64K | **18.0 GiB** | 23.0 GiB | 62.3 GiB |
+| GPU memory in use, peak during the run (4-bit) | 28.4 / 30.6 GB | 28.4 GB | 64.8 GB |
 
-All timed numbers come from quiet runs that satisfy the battery rule (METHODOLOGY.md, "Battery"). M1, M4 and M5 run with thinking off; with thinking on, oMLX re-prefills ~1.5K tokens per step (`omlx/summary.md`).
+GPU memory is the system-wide AGX "In use system memory" from the monitor, which is comparable across frameworks; llama.cpp's process footprint leaves out its mmap'd weights. All timed numbers come from quiet runs that satisfy the battery rule (METHODOLOGY.md, "Battery"). M1, M4 and M5 run with thinking off; with thinking on, oMLX re-prefills ~1.5K tokens per step (`omlx/summary.md`).
 
 ## Layout
 
