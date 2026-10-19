@@ -23,6 +23,16 @@
 - **The anchor tag `4bit-mtp-off-anchor`** is M1 at 17:37, with the battery at 96 %. It
   matched the 04:35 night run (battery 29 %, quarantined) within 1 %. That is the
   calibration for the battery rule.
+- **M6, with MTP on, for 30 min:** 0 errors in 187 requests and no latency drift (last run
+  over first run: 1.00). The server tree grew from 17 to 24 GiB, which is the prompt-cache RAM
+  and the context checkpoints (`--cache-ram 8192`).
+- **Q8_0 (`8bit-mtp-off`), 2026-10-19:**
+  - every gate passes, G2b included; G5 at 64K has a TTFT of 151.3 s;
+  - M1: warm 4.31 s, cold 29.6 s;
+  - M4: about 296 s per run (250 s at 4-bit), with a slope of 0.080 s/step;
+  - M7: 23/24, the same `m7-07-enum` case.
+
+  M3 and the MTP-on row are still running.
 - **Superseded gate.** The 17:30 gate is in `raw/superseded/`.
 
 <!-- agentbench:begin summary 4bit-mtp-off -->
@@ -288,3 +298,94 @@ Source: `raw/m1-4bit-mtp-off-anchor-20261018-173749.jsonl`.
 
 Cold / warm TTFT (medians): 7.13x.
 <!-- agentbench:end summary 4bit-mtp-off-anchor -->
+
+<!-- agentbench:begin summary 8bit-mtp-off -->
+## Results, tag `8bit-mtp-off`
+
+### Gate G1-G5
+
+Source: `raw/gate-8bit-mtp-off-20261019-103346.jsonl`.
+
+| ID | Requirement | Result | Detail |
+| --- | --- | --- | --- |
+| G1 | OpenAI chat completions + SSE + Qwen3.8 tool calls | **PASS** | fs_read_file {"path":"docs/setup.md"}; incremental (7 deltas); first call chunk at 24.03 s, e2e 25.08 s; finish=tool_calls |
+| G2 | Image input (base64 PNG image_url), code read back | **PASS** | read Y3N-9JT correctly; prompt_tokens=1319 |
+| G2b | Image inside a tool result (role=tool image_url, Hermes path), code read back | **PASS** | tool-message image: read Y3N-9JT; prompt_tokens=1920; control (user message): read Y3N-9JT; prompt_tokens=1935 |
+| G3 | Anthropic /v1/messages: text, tool_use, image, image in tool_result | **PASS** | text ok, tool_use ok, image ok, tool_result image ok; text ok ('ready'); reasoning 135 chars in thinking_block / text ok ('ready'); reasoning 114 chars in thinking_block |
+| G4 | Thinking control (enable_thinking / reasoning_effort) | **PASS** | Hermes off: no reasoning; Hermes on: reasoning 116 chars in reasoning_content \| G4.effort-none-only: accepted; no reasoning \| G4.effort-high: accepted; reasoning 152 chars in reasoning_content \| G4.effort-minimal: error: HTTP 500: {"error":{"code":500,"message":"\n------------\nWhile executing CallExpression at line 64, column 28 in source:\n...', 'low') %}↵        {{- raise_exception('Unexpected reasoning effort ' ~ reason...\n                                           ^\nError: Jinja Exception: Unexpected reasoning effort m \| G4.default: accepted; reasoning 152 chars in reasoning_content |
+| G5 | Context >= 64K: a 64,000-token prompt completes | **PASS** | 64000-token prompt completed: prompt_tokens=64000, TTFT 151.3 s; configured context: 131072; peak server footprint 18.0 GiB |
+
+### M1 cached-prefix TTFT
+
+Source: `raw/m1-8bit-mtp-off-20261019-103830.jsonl`.
+
+| Phase | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | first chunk | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 5 | 4.314 (4.001-4.448) | 10.411 (10.006-11.087) | 14945 | 16590 | content | 0 |
+| cold | 3 | 29.629 (29.443-29.635) | 35.107 (34.648-35.112) | 0 | 16605 | content | 0 |
+
+Cold / warm TTFT (medians): 6.87x.
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-8bit-mtp-off-20261019-114511.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 26.533 (25.960-26.705) | 33.709 (33.130-33.904) | 0 | 15030 | 0.00 | 0 |
+| 1 | 3 | 4.714 (4.569-4.744) | 13.205 (12.947-13.234) | 15026 | 16733 | 0.90 | 0 |
+| 2 | 3 | 4.778 (4.658-4.784) | 13.602 (13.383-13.609) | 16729 | 18439 | 0.91 | 0 |
+| 3 | 3 | 4.894 (4.750-4.930) | 10.705 (10.464-10.742) | 18435 | 20140 | 0.92 | 0 |
+| 4 | 3 | 4.987 (4.799-4.989) | 13.911 (13.626-13.921) | 20136 | 21838 | 0.92 | 0 |
+| 5 | 3 | 5.010 (4.876-5.070) | 11.355 (11.098-11.375) | 21834 | 23565 | 0.93 | 0 |
+| 6 | 3 | 5.062 (4.958-5.078) | 11.234 (11.027-11.246) | 23561 | 25264 | 0.93 | 0 |
+| 7 | 3 | 5.132 (5.021-5.181) | 10.156 (9.958-10.199) | 25260 | 26950 | 0.94 | 0 |
+| 8 | 3 | 5.260 (5.100-5.270) | 12.054 (11.795-12.063) | 26946 | 28660 | 0.94 | 0 |
+| 9 | 3 | 5.356 (5.213-5.414) | 11.741 (11.530-11.788) | 28656 | 30367 | 0.94 | 0 |
+| 10 | 3 | 5.440 (5.268-5.449) | 14.683 (14.399-14.698) | 30363 | 32060 | 0.95 | 0 |
+| 11 | 3 | 5.481 (5.426-5.492) | 14.794 (14.622-14.801) | 32056 | 33769 | 0.95 | 0 |
+| 12 | 3 | 5.621 (5.445-5.626) | 14.958 (14.725-14.959) | 33765 | 35481 | 0.95 | 0 |
+| 13 | 3 | 5.670 (5.624-5.682) | 15.055 (14.939-15.090) | 35477 | 37191 | 0.95 | 0 |
+| 14 | 3 | 5.761 (5.668-5.786) | 11.507 (11.373-11.518) | 37187 | 38906 | 0.96 | 0 |
+| 15 | 3 | 5.853 (5.755-5.890) | 12.075 (11.945-12.098) | 38902 | 40612 | 0.96 | 0 |
+| 16 | 3 | 5.903 (5.867-5.917) | 12.545 (12.450-12.569) | 40608 | 42305 | 0.96 | 0 |
+| 17 | 3 | 5.985 (5.911-6.017) | 12.239 (12.224-12.327) | 42301 | 44009 | 0.96 | 0 |
+| 18 | 3 | 6.040 (6.022-6.045) | 15.688 (15.640-15.694) | 44005 | 45696 | 0.96 | 0 |
+| 19 | 3 | 6.162 (6.100-6.220) | 15.860 (15.787-15.923) | 45692 | 47383 | 0.96 | 0 |
+| 20 | 3 | 6.232 (6.162-6.311) | 15.962 (15.889-16.031) | 47379 | 49097 | 0.97 | 0 |
+
+TTFT slope over steps 1-20: 0.0803 s/step (steps 2-20: 0.0804 s/step); total e2e per run: 293.0, 297.3, 297.5 s.
+
+### M7 tool-call correctness
+
+Source: `raw/m7-8bit-mtp-off-20261019-120012.jsonl`.
+
+Passed 23/24.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary 8bit-mtp-off -->

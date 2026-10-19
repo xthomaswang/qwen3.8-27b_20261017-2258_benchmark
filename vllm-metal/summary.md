@@ -22,6 +22,17 @@
   `low`; `high` and `minimal` get HTTP 400.
 - **Cached long context.** M3 TTFT with a cached 64K context is ~2.0 s, against 0.14 s for
   llama.cpp and 0.71 s for oMLX.
+- **M6, 15 min:** 0 errors in 75 requests and no latency drift. The server stays at 62.5 GiB,
+  which is the KV reservation.
+- **8-bit (`8bit-spec-off`), 2026-10-19:**
+  - every gate passes, G2b included;
+  - G5 at 64K: TTFT 165.3 s, 62.3 GiB;
+  - M1: warm 3.90 s, cold 30.4 s;
+  - M4: about 307 s per run, with a slope of 0.13 s/step. Step 1 takes 4.29 s, because prefix
+    reuse works;
+  - M7: 23/24 (`m7-07-enum`).
+
+  sysmond disturbed the first gate attempt, which is quarantined.
 - **Superseded gate.** The 16:32 gate is in `raw/superseded/`.
 
 <!-- agentbench:begin summary 4bit-spec-off -->
@@ -121,6 +132,22 @@ Source: `raw/m5-4bit-spec-off-20261018-174811.jsonl`.
 | 1 | 3 | 6.410 (6.185-6.469) | 1.68 | 7.896 (7.834-10.949) | 14896 | 0 | 0 | 6.868 (6.640-6.927) |
 | 2 | 3 | 9.292 (9.170-9.485) | 2.44 | 12.498 (10.891-14.515) | 14896 | 0 | 0 | 9.768 (9.621-9.986) |
 
+### M6 memory and stability
+
+Source: `raw/m6-4bit-spec-off-20261019-065920.jsonl`.
+
+| Metric | Value |
+| --- | --- |
+| footprint at 64,000 tokens: server tree peak GiB | 62.84 |
+| footprint: system used peak GiB | 109.39 |
+| loop minutes / runs (complete) / requests | 15.0 / 4 (3) / 75 |
+| errors | 0 |
+| server tree GiB start / peak / end | 62.48 / 63.54 / 62.54 |
+| server tree growth GiB | 0.06 |
+| system used GiB start / end | 108.52 / 107.77 |
+| e2e last run / first run (median per step) | 1.00 |
+| e2e s over all requests | 11.121 (7.023-28.971) |
+
 ### M7 tool-call correctness
 
 Source: `raw/m7-4bit-spec-off-20261018-175127.jsonl`.
@@ -154,3 +181,94 @@ Passed 24/24.
 | m7-23-image-click | call after an image | pass | - |
 | m7-24-calendar | nested objects | pass | - |
 <!-- agentbench:end summary 4bit-spec-off -->
+
+<!-- agentbench:begin summary 8bit-spec-off -->
+## Results, tag `8bit-spec-off`
+
+### Gate G1-G5
+
+Source: `raw/gate-8bit-spec-off-20261019-075116.jsonl`.
+
+| ID | Requirement | Result | Detail |
+| --- | --- | --- | --- |
+| G1 | OpenAI chat completions + SSE + Qwen3.8 tool calls | **PASS** | fs_read_file {"path": "docs/setup.md"}; incremental (6 deltas); first call chunk at 1.65 s, e2e 2.81 s; finish=tool_calls |
+| G2 | Image input (base64 PNG image_url), code read back | **PASS** | read Y3N-9JT correctly; prompt_tokens=1319 |
+| G2b | Image inside a tool result (role=tool image_url, Hermes path), code read back | **PASS** | tool-message image: read Y3N-9JT; prompt_tokens=1920; control (user message): read Y3N-9JT; prompt_tokens=1935 |
+| G3 | Anthropic /v1/messages: text, tool_use, image, image in tool_result | **PASS** | text ok, tool_use ok, image ok, tool_result image ok; text ok ('ready'); reasoning 96 chars in thinking_block / text ok ('ready'); reasoning 113 chars in thinking_block |
+| G4 | Thinking control (enable_thinking / reasoning_effort) | **PASS** | Hermes off: no reasoning; Hermes on: reasoning 116 chars in reasoning \| G4.effort-none-only: accepted; no reasoning \| G4.effort-high: error: HTTP 400: {"error":{"message":"Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low.","type":"BadRequestError","param":null,"code":400}} \| G4.effort-minimal: error: HTTP 400: {"error":{"message":"Unexpected reasoning effort minimal. Supported types are xhigh (default), medium, and low.","type":"BadRequestError","param":null,"code":400}} \| G4.default: accepted; reasoning 152 chars in reasoning |
+| G5 | Context >= 64K: a 64,000-token prompt completes | **PASS** | 64000-token prompt completed: prompt_tokens=64000, TTFT 165.3 s; configured context: 131072; peak server footprint 62.3 GiB |
+
+### M1 cached-prefix TTFT
+
+Source: `raw/m1-8bit-spec-off-20261019-075513.jsonl`.
+
+| Phase | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | first chunk | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 5 | 3.902 (3.854-4.079) | 10.547 (9.782-10.801) | 14896 | 16590 | content | 0 |
+| cold | 3 | 30.368 (30.127-30.371) | 36.118 (36.116-36.737) | 0 | 16605 | content | 0 |
+
+Cold / warm TTFT (medians): 7.78x.
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-8bit-spec-off-20261019-075818.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 26.167 (25.309-26.173) | 32.165 (31.305-34.178) | 0 | 15030 | 0.00 | 0 |
+| 1 | 3 | 4.292 (4.190-4.317) | 13.073 (12.968-13.469) | 14896 | 16733 | 0.89 | 0 |
+| 2 | 3 | 4.378 (4.308-4.388) | 13.555 (13.482-13.560) | 16464 | 18439 | 0.89 | 0 |
+| 3 | 3 | 4.877 (4.736-4.894) | 10.547 (10.331-10.717) | 18032 | 20140 | 0.90 | 0 |
+| 4 | 3 | 5.220 (5.103-5.290) | 14.480 (14.351-14.533) | 19600 | 21838 | 0.90 | 0 |
+| 5 | 3 | 5.865 (5.710-5.870) | 11.759 (11.536-12.088) | 21168 | 23565 | 0.90 | 0 |
+| 6 | 3 | 4.445 (4.441-4.546) | 10.786 (10.783-10.884) | 23520 | 25264 | 0.93 | 0 |
+| 7 | 3 | 4.685 (4.652-4.732) | 10.171 (10.140-10.226) | 25088 | 26950 | 0.93 | 0 |
+| 8 | 3 | 5.259 (5.203-5.304) | 12.527 (12.461-13.821) | 26656 | 28660 | 0.93 | 0 |
+| 9 | 3 | 5.653 (5.627-5.659) | 12.368 (12.365-12.459) | 28224 | 30367 | 0.93 | 0 |
+| 10 | 3 | 5.878 (5.865-5.953) | 15.458 (15.448-15.535) | 29792 | 32060 | 0.93 | 0 |
+| 11 | 3 | 6.879 (6.784-6.890) | 16.507 (16.410-16.526) | 31360 | 33769 | 0.93 | 0 |
+| 12 | 3 | 5.228 (5.177-5.229) | 14.846 (13.980-14.896) | 33712 | 35481 | 0.95 | 0 |
+| 13 | 3 | 5.538 (5.429-5.646) | 15.232 (15.125-15.346) | 35280 | 37191 | 0.95 | 0 |
+| 14 | 3 | 6.108 (5.991-6.130) | 11.371 (11.323-11.401) | 36848 | 38906 | 0.95 | 0 |
+| 15 | 3 | 6.487 (6.482-6.583) | 12.999 (12.962-13.057) | 38416 | 40612 | 0.95 | 0 |
+| 16 | 3 | 7.059 (7.036-7.090) | 14.560 (14.524-14.961) | 39984 | 42305 | 0.95 | 0 |
+| 17 | 3 | 7.845 (7.843-7.926) | 15.057 (15.053-15.130) | 41552 | 44009 | 0.94 | 0 |
+| 18 | 3 | 5.892 (5.818-6.012) | 15.834 (15.766-15.971) | 43904 | 45696 | 0.96 | 0 |
+| 19 | 3 | 6.345 (6.239-6.448) | 16.328 (16.216-16.475) | 45472 | 47383 | 0.96 | 0 |
+| 20 | 3 | 6.975 (6.902-6.979) | 16.991 (16.925-17.040) | 47040 | 49097 | 0.96 | 0 |
+
+TTFT slope over steps 1-20: 0.1326 s/step (steps 2-20: 0.1292 s/step); total e2e per run: 306.2, 309.0, 307.1 s.
+
+### M7 tool-call correctness
+
+Source: `raw/m7-8bit-spec-off-20261019-081353.jsonl`.
+
+Passed 23/24.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary 8bit-spec-off -->
