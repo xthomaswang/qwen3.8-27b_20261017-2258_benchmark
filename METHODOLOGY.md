@@ -77,8 +77,9 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
       ~115 % through the heartbeat. Both were paused with `kill -STOP` at 17:29:33.
     - The pre-flight output cannot show a paused process, so the windows are recorded
       here. suggestd was paused from 16:19 and mediaanalysisd with spotlightknowledged from
-      17:29:33, all until _(resume time filled in when the user restores them)_. The timed
-      segment ended at 17:53.
+      17:29:33. All three were resumed with `kill -CONT` at 22:02:05, and
+      `launchctl enable` was run for suggestd. They covered both timed segments of that
+      afternoon and evening, 16:31–17:53 and 18:27–21:58.
     - The first declaration triggers a short "user returned" burst of about 30 s (Spotlight,
       widgets). The runner waits 45 s before its first check to absorb it.
     - Every framework runs under the same heartbeat.

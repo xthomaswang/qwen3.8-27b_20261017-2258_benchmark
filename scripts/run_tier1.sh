@@ -9,6 +9,7 @@
 #   then vllm-m5m7 (vllm-rest stopped before m5 while mediaanalysisd was busy)
 #   battery re-run (the night's timed suites ran with the battery at 6-29 %; see
 #   METHODOLOGY.md): vllm-rerun omlx-rerun llama-off-rerun llama-on-rerun llama-conc-rerun
+#   then omlx-m2 (omlx-rerun's m2 was disturbed twice: systemstats, then an adapter dropout)
 # Between steps the machine idles COOL_S seconds (default 120) so each server starts cool.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
@@ -35,6 +36,7 @@ for step in $steps; do
     llama-off-rerun)  scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off gate,m1,m2,m3,m4 --spec-label off ;;
     llama-on-rerun)   scripts/run_framework.sh llama.cpp mtp-on 4bit llamacpp 4bit-mtp-on m1,m3,m4 --spec-label on ;;
     llama-conc-rerun) scripts/run_framework.sh llama.cpp conc 4bit llamacpp 4bit-conc m5 ;;
+    omlx-m2)          scripts/run_framework.sh omlx spec-off 4bit omlx 4bit-spec-off m2 --spec-label off ;;
     llama-gate) scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off gate --spec-label off ;;
     llama-anchor) scripts/run_framework.sh llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-anchor m1 --spec-label off ;;
     omlx-gate)  scripts/run_framework.sh omlx spec-off 4bit omlx 4bit-spec-off gate --spec-label off ;;

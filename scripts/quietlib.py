@@ -35,6 +35,10 @@ Stdlib only; run with /usr/bin/python3 -I. Subcommands:
 --allow-pid PID exempts PID and all its descendants (the server under test, its engine
 workers, the harness) from the per-process checks.
 
+Processes inside an app bundle whose identifier is not com.apple.* are shown as `<app>`, so
+the user's own apps never reach committed files (scripts/redact.py applies the same rule to
+older files).
+
 Thresholds (environment): QUIET_MAX_LOAD (1-min load, check only, default 2.5),
 QUIET_MAX_PROC_CPU (any single foreign process, default 25 %), QUIET_MAX_FOREIGN_CPU
 (sum over foreign processes, default 150 %), QUIET_MAX_GPU (GPU "Device Utilization %"
@@ -48,7 +52,9 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import functools
 import os
+import plistlib
 import re
 import subprocess
 import sys
@@ -219,8 +225,28 @@ def sample(allow: list[int]) -> dict:
             "battery": batt, "battery_state": batt_state, "tpl": thermal_pressure()}
 
 
+@functools.lru_cache(maxsize=None)
+def third_party_app(comm: str) -> bool:
+    """True when the executable lives in an app bundle that is not Apple's (an unreadable
+    bundle counts as third-party)."""
+    if ".app/" not in comm:
+        return False
+    outer = comm.split(".app/", 1)[0] + ".app"
+    try:
+        with open(os.path.join(os.path.expanduser(outer), "Contents", "Info.plist"), "rb") as f:
+            bid = str(plistlib.load(f).get("CFBundleIdentifier", ""))
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return True
+    return not bid.startswith("com.apple.")
+
+
 def name(comm: str) -> str:
-    return os.path.basename(comm)
+    return "<app>" if third_party_app(comm) else os.path.basename(comm)
+
+
+def shown(comm: str) -> str:
+    """The executable path as printed: `<app>` for third-party apps, ~ for the home directory."""
+    return "<app>" if third_party_app(comm) else tidy(comm)
 
 
 def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None,
@@ -266,7 +292,7 @@ def report(s: dict, settle_note: str | None, verdict: bool) -> str:
              + ", ".join(f"{name(c)} {cpu:.1f}" for _, cpu, c in s["top"])]
     if s["busy"]:
         lines.append(f"busy foreign processes (>{MAX_PROC_CPU:.0f}% CPU):")
-        lines += [f"  {pid} {cpu:.1f} {tidy(c)}" for pid, cpu, c in s["busy"]]
+        lines += [f"  {pid} {cpu:.1f} {shown(c)}" for pid, cpu, c in s["busy"]]
     else:
         lines.append("busy foreign processes: none")
     if s["tools"]:
