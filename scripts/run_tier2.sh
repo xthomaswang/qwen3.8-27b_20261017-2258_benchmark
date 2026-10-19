@@ -53,6 +53,7 @@ for step in $steps; do
     q8-off-t1)      SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off-t1 m3 --spec-label off --extra-body "$SAMP" ;;
     q4-on-t1)       SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-on 4bit llamacpp 4bit-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
     q4-off-t1)      SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-t1 m3 --spec-label off --extra-body "$SAMP" ;;
+    omlx8-t1)       $rf omlx spec-off 8bit omlx 8bit-spec-off-t1 m4 --spec-label off --extra-body "$SAMP" ;;
     mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
     mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
     lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;

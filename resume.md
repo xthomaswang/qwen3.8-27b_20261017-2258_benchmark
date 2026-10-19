@@ -1,9 +1,66 @@
 # Resume — current progress
 
-Updated: 2026-10-19 09:20 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-19 15:10 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-19 09:20): Tier-2 block done; Q8_0 downloading; next block planned
+## Current state (2026-10-19 15:10): paused by the user (laptop taken out)
+
+- **Stopped at 15:07** on the user's request. The `q4-on-t1` step was cut mid-M3, and its
+  partial M3 and monitor TSV are in `llama.cpp/raw/_unverified/`. The lock was released at
+  15:07:18. All three other sessions were asked to pause until the user says to continue.
+- **Done since 09:20:**
+  - **Q8_0 GGUF** (downloaded 09:11–09:24, the `8bit` tier in `serve.sh`):
+    - MTP off: gate, M1, M4, M7. Its M3 was disturbed four times (mds, corespotlightd
+      during the Spotlight purge, amsengagementd, biomesyncd).
+    - MTP on: M1, M3, M4, M7.
+  - **oMLX 8-bit M3.** The thinking-on TTFT is ~3 s against ~0.3 s with thinking off; the
+    cache is reused only up to a block boundary, as at 4-bit.
+  - **The model's own sampling** (temperature 1.0, top_p 0.95, top_k 20, sent with
+    `--extra-body`; the `*-t1` tags in `run_tier2.sh`), at the agent-benchmark session's
+    request:
+    - Q8_0 MTP-on M3 and M4, and MTP-off M3;
+    - MTP acceptance fell from 0.85 to 0.56 on thinking text, and the M4 total went from
+      207 to 225 s;
+    - MTP is still 1.7–2.3× faster than MTP off;
+    - at 8-bit, MTP off decodes at the same rate as oMLX (16–18 tok/s).
+  - **PR #4:** M6 for the three candidates, and the 8-bit gate, M1, M4 and M7 for llama.cpp
+    Q8_0, oMLX and vLLM-Metal.
+  - **README memory row corrected.** It now uses the system-wide GPU memory in use from the
+    monitor, because llama.cpp's process footprint leaves out its mmap'd weights. llama.cpp
+    and oMLX are about equal: 28.4 GB at 4-bit.
+  - **Machine changes by the user:**
+    - `~/Developer/ml_source` and `~/Developer/mlsys/experiments` were added to Spotlight's
+      privacy list at about 11:15;
+    - Maps and Activity Monitor were closed at about 10:15.
+  - **Tooling:**
+    - `logs/hold` pauses the chain between steps while keeping the lock (`run_framework.sh`);
+    - battery pause rule: below 50 %, or 60 % before a long step, the runner releases the
+      lock until the battery is back at 80 %.
+- **Still paused:** suggestd (43674) and mediaanalysisd (93568), since 2026-10-18 22:35:45.
+  Restore them with `kill -CONT 43674 93568`; suggestd is already `launchctl enable`d.
+- **To resume** (the user's order: what decides A1 comes first). Give the 10 min notice,
+  check the battery, then run
+  `scripts/gpu_lock.sh acquire "<purpose>" <eta>` and
+  `scripts/run_tier2.sh q4-on-t1 q4-off-t1 omlx8-t1 mlxlm-8bit-fix mlxlm-4bit-fix lithos-dspark-fix lithos-nodraft-fix lithos-nvfp4-fix llama-q8-off-m3`.
+  1. `q4-on-t1`, `q4-off-t1` and `omlx8-t1`: 4-bit at temperature 1.0, and oMLX 8-bit M4 at
+     temperature 1.0. The user decides A1 on these, so send the results to the
+     agent-benchmark session at once.
+  2. The text-only reference re-runs: M1 and M4 for mlx-lm and lithos-metal; lithos runs M4
+     once.
+  3. `llama-q8-off-m3` (temperature 0), preferably at night.
+  4. Then:
+     - a PR for the Q8_0 rows, the temperature-1.0 rows and the oMLX 8-bit M3;
+     - the Core AI 27B export (about 84 GB of scratch) and its `serve.sh` entry;
+     - MLC-LLM and Core AI runs, and the A/B comparison;
+     - M8, the interference study: four frameworks (llama.cpp, oMLX, lithos-metal,
+       vLLM-Metal) × seven scenarios, approved by the user; the tooling is still to be
+       written;
+     - the disk cleanup.
+- **Lesson.** Do not find a chain with `pgrep -f` on its command line: heartbeat subshells
+  share it, and that made one relaunch refuse to run. Check the parent PID, or use the
+  `logs/hold` switch.
+
+## State at 09:20: Tier-2 block done; Q8_0 downloading
 
 - **The overnight block, 22:36–09:05** (`logs/tier2-20261018-223602.log`). All steps
   returned rc 0. The user moved lithos-metal to the front.
