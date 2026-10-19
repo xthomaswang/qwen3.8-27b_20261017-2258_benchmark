@@ -9,7 +9,7 @@
 #
 #   framework     variants                   tiers        port
 #   mlx-lm        server                     8bit 4bit    8701
-#   llama.cpp     mtp-off mtp-on conc        4bit         8702
+#   llama.cpp     mtp-off mtp-on conc        4bit 8bit    8702   (4bit: UD-Q4_K_M; 8bit: Q8_0)
 #   omlx          spec-off  (spec-on: stub)  8bit 4bit    8703
 #   lithos-metal  dspark no-draft            4bit nvfp4   8704
 #   vllm-metal    spec-off  (spec-on: stub)  8bit 4bit    8705
@@ -92,9 +92,11 @@ build_mlx_lm() {
 }
 
 build_llama() {
-  case "$TIER" in 4bit) ;; *) bad_tier "4bit (unsloth UD-Q4_K_M GGUF)" ;; esac
+  case "$TIER" in 4bit|8bit) ;; *) bad_tier "4bit (unsloth UD-Q4_K_M GGUF) 8bit (Q8_0 GGUF)" ;; esac
   case "$VARIANT" in mtp-off|mtp-on|conc) ;; *) bad_variant "mtp-off mtp-on conc" ;; esac
   local exe main=Qwen3.8-27B-UD-Q4_K_M.gguf mmproj=mmproj-F16.gguf mtp=MTP/mtp-Qwen3.8-27B-Q4_0.gguf
+  # 8bit: the Q8_0 target; MTP keeps the separate Q4_0 draft head, which does not depend on the target quant.
+  [ "$TIER" = 8bit ] && main=Qwen3.8-27B-Q8_0.gguf
   local -a files=(--file "$main")
   exe=$(fw_exe llama.cpp)
   WORKDIR="$SERVING/llama.cpp"

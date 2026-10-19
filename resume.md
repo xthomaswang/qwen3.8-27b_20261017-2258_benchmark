@@ -1,7 +1,46 @@
 # Resume — current progress
 
-Updated: 2026-10-18 22:15 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-19 09:20 (local). Rewrite this after every major phase, and read it first
 when resuming.
+
+## Current state (2026-10-19 09:20): Tier-2 block done; Q8_0 downloading; next block planned
+
+- **The overnight block, 22:36–09:05** (`logs/tier2-20261018-223602.log`). All steps
+  returned rc 0. The user moved lithos-metal to the front.
+  - **Battery pauses:** 02:10:46 (43 %) to 02:49:19, and 05:11:06 (47 %) to 05:47:09. The
+    script released and re-took the lock itself. The session was blocked on an
+    AskUserQuestion from 23:47 to 06:45, so no notices went out; `localmelo_main` watched
+    the lock file. Never block while a chain runs.
+  - **Verified:**
+    - lithos-metal `dspark`, `no-draft` and `nvfp4`: gate, M2, M3, M7 (`no-draft` has no
+      gate);
+    - M6 for llama.cpp `mtp-on`, oMLX and vLLM-Metal;
+    - 8-bit gate, M1, M4 and M7 for oMLX and vLLM-Metal, and gate and M7 for mlx-lm;
+    - mlx-lm 4-bit: gate, M2, M3, M7.
+  - **Invalid, then quarantined:** the mlx-lm and lithos M1/M4. Each suite runs in its own
+    process, so the gate's auto text-only switch never reached them, and they sent
+    screenshots to servers that reject images. Fixed in `c9581b1`, which forces text-only in
+    those profiles and sends lithos all-text content as strings; 96 tests pass.
+- **8-bit findings,** sent to the agent-benchmark session:
+  - stock oMLX 8-bit fails G2b, like 4-bit;
+  - oMLX M4 step 1 re-prefills at 8-bit too;
+  - vLLM-Metal passes everything; its peak footprint is 62 GiB;
+  - both 8-bit MLX runs fail `m7-07-enum`, as llama.cpp Q4_K_M does, so the llama.cpp
+    note is corrected: a borderline case, not GGUF.
+- **Next block** (the user's order: A1-relevant first). The steps are in `run_tier2.sh`:
+  1. `omlx-8bit-m3`, then `llama-q8-off` and `llama-q8-on`. The Q8_0 GGUF (29.05 GB) is
+     downloading now; the user approved it at 09:10.
+  2. `mlxlm-8bit-fix`, `mlxlm-4bit-fix`, then `lithos-dspark-fix`, `lithos-nodraft-fix` and
+     `lithos-nvfp4-fix`. Each re-runs M1 and M4; lithos's M4 runs once, because it has no
+     prefix cache.
+
+  Give `localmelo_main` the 10 min notice first. suggestd (43674) and mediaanalysisd
+  (93568) have been paused since 22:35:45; the user resumes them after the block.
+- **Then:** the PRs for lithos-metal, mlx-lm, the 8-bit rows and M6. After that, Core AI,
+  MLC-LLM and the A/B comparison (daytime, someone present), the summary PR and the final
+  Chinese summary.
+- **Last: disk cleanup** (the user's request). List the candidates with their sizes, and
+  confirm the shared or big ones with the user before deleting.
 
 ## Overnight block (planned 2026-10-18 23:00, the user's choice)
 

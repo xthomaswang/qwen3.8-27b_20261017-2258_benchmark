@@ -13,8 +13,9 @@
   rule (METHODOLOGY.md, "Battery": at least 40 % at each start and never below 20 %). M7
   checks correctness only and reports no timing, so its night runs (05:50, 06:32) are kept.
 - **M7 is 23/24, with MTP off and on.** `m7-07-enum` calls `window_list` instead of
-  `window_arrange`, deterministically at temperature 0. The MLX 4-bit stacks pass this case,
-  so the likely cause is the GGUF quantization, not the server.
+  `window_arrange`, deterministically at temperature 0. The 8-bit MLX runs (oMLX and
+  vLLM-Metal, 2026-10-19) make the same choice, while the MLX 4-bit runs do not. So this is a
+  borderline case for the model rather than a GGUF or server issue.
 - **Thinking costs no decode speed:** 23.7 tok/s against 24.0 at 16K, and 22.0 against 22.0
   at 32K. The ~25 % gap seen before came from the night's power cap.
 - **MTP** raises decode for structured output from 24.0 to 41.5 tok/s at 16K, and from 23.7
@@ -208,6 +209,22 @@ Source: `raw/m4-4bit-mtp-on-20261018-213020.jsonl`.
 | 20 | 3 | 6.087 (6.071-6.203) | 10.101 (10.050-10.130) | 47379 | 49097 | 0.97 | 0 |
 
 TTFT slope over steps 1-20: 0.0789 s/step (steps 2-20: 0.0798 s/step); total e2e per run: 200.0, 200.9, 201.3 s.
+
+### M6 memory and stability
+
+Source: `raw/m6-4bit-mtp-on-20261019-054803.jsonl`.
+
+| Metric | Value |
+| --- | --- |
+| footprint at 64,000 tokens: server tree peak GiB | 12.00 |
+| footprint: system used peak GiB | 74.50 |
+| loop minutes / runs (complete) / requests | 30.0 / 9 (8) / 187 |
+| errors | 0 |
+| server tree GiB start / peak / end | 17.00 / 25.00 / 24.00 |
+| server tree growth GiB | 7.00 |
+| system used GiB start / end | 78.36 / 86.43 |
+| e2e last run / first run (median per step) | 1.00 |
+| e2e s over all requests | 8.468 (6.998-30.493) |
 
 ### M7 tool-call correctness
 

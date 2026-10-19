@@ -9,6 +9,11 @@
 #   8-bit rows, gate + M1/M4/M7: omlx-8bit vllm-8bit mlxlm-8bit
 #   references (the harness switches them to text-only): mlxlm-4bit lithos-dspark
 #     lithos-nodraft lithos-nvfp4
+#   2026-10-19 additions: omlx-8bit-m3 (thinking-on TTFT at 8-bit), llama-q8-off llama-q8-on
+#     (the Q8_0 GGUF; MTP uses the same Q4_0 draft head), and the M1/M4 re-runs with forced
+#     text-only (commit c9581b1): mlxlm-8bit-fix mlxlm-4bit-fix lithos-dspark-fix
+#     lithos-nodraft-fix lithos-nvfp4-fix. lithos has no prefix cache (one M4 run ~40 min), so
+#     its M4 runs once.
 # Between steps the machine idles COOL_S seconds (default 120) so each server starts cool.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
@@ -34,6 +39,14 @@ for step in $steps; do
     lithos-dspark)  $rf lithos-metal dspark 4bit lithos 4bit-dspark gate,m1,m2,m3,m4,m7 --spec-label on ;;
     lithos-nodraft) $rf lithos-metal no-draft 4bit lithos 4bit-no-draft m1,m3,m4,m7 --spec-label off ;;
     lithos-nvfp4)   $rf lithos-metal dspark nvfp4 lithos nvfp4-dspark gate,m1,m2,m3,m4,m7 --spec-label on ;;
+    omlx-8bit-m3)   $rf omlx spec-off 8bit omlx 8bit-spec-off m3 --spec-label off ;;
+    llama-q8-off)   $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off gate,m1,m3,m4,m7 --spec-label off ;;
+    llama-q8-on)    $rf llama.cpp mtp-on 8bit llamacpp 8bit-mtp-on m1,m3,m4,m7 --spec-label on ;;
+    mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
+    mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
+    lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;
+    lithos-nodraft-fix) SUITE_ARGS_m4="--runs 1" $rf lithos-metal no-draft 4bit lithos 4bit-no-draft m1,m4 --spec-label off ;;
+    lithos-nvfp4-fix)   SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark nvfp4 lithos nvfp4-dspark m1,m4 --spec-label on ;;
     *) echo "unknown step $step"; failed="$failed $step"; continue ;;
   esac
   rc=$?
