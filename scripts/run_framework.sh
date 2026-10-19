@@ -43,6 +43,13 @@ ts() { date '+%T'; }
 # again after a 10 min notice. The progress lines (BATTERY-PAUSE / BATTERY-READY / RESUMED) are
 # for the session that relays them to the other sessions.
 LOCKFILE="$HOME/Developer/mlsys/experiments/.gpu-lock"
+# A work window for the driving session (its own CPU would disturb a timed suite): while
+# logs/hold exists, the next step waits here before it starts, keeping the lock.
+if [ -e logs/hold ]; then
+  echo "$(ts) HOLD: logs/hold exists; waiting before $fw $variant $tier ($suites)"
+  while [ -e logs/hold ]; do sleep 15; done
+  echo "$(ts) HOLD released"
+fi
 batt_pct() { pmset -g batt | grep -o '[0-9]*%' | head -1 | tr -d %; }
 if [ "$UNV" != 1 ] && grep -q '^holder: local_ai-benchmark session' "$LOCKFILE" 2>/dev/null; then
   nsuites=$(printf '%s' "$suites" | tr ',' '\n' | grep -c .)

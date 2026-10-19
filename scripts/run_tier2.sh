@@ -42,6 +42,7 @@ for step in $steps; do
     omlx-8bit-m3)   $rf omlx spec-off 8bit omlx 8bit-spec-off m3 --spec-label off ;;
     llama-q8-off)   $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off gate,m1,m3,m4,m7 --spec-label off ;;
     llama-q8-on)    $rf llama.cpp mtp-on 8bit llamacpp 8bit-mtp-on m1,m3,m4,m7 --spec-label on ;;
+    llama-q8-off-m3) $rf llama.cpp mtp-off 8bit llamacpp 8bit-mtp-off m3 --spec-label off ;;
     mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
     mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
     lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;
