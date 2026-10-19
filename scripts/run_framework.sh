@@ -35,6 +35,35 @@ else WAIT_S=${QUIET_WAIT_S:-600} PRE_S=${QUIET_PRESERVE_S:-300} HP_S=60 RETRIES=
 MIN_BATT=${QUIET_MIN_BATTERY:-40}
 PY=/usr/bin/python3
 ts() { date '+%T'; }
+# Between steps (the user's rule, 2026-10-18): when the battery is low, hand the machine to the
+# other sessions while it charges, then take it back. A step with five or more suites, or a
+# 30 min M6, drains 15-20 %, so it needs BATTERY_PAUSE_LONG % (default 60) to start; a shorter
+# step needs BATTERY_PAUSE_BELOW % (default 50). Below that the lock is released until the
+# battery is at BATTERY_RESUME_AT % (default 80; charging is ~3x slower above 80 %), then taken
+# again after a 10 min notice. The progress lines (BATTERY-PAUSE / BATTERY-READY / RESUMED) are
+# for the session that relays them to the other sessions.
+LOCKFILE="$HOME/Developer/mlsys/experiments/.gpu-lock"
+batt_pct() { pmset -g batt | grep -o '[0-9]*%' | head -1 | tr -d %; }
+if [ "$UNV" != 1 ] && grep -q '^holder: local_ai-benchmark session' "$LOCKFILE" 2>/dev/null; then
+  nsuites=$(printf '%s' "$suites" | tr ',' '\n' | grep -c .)
+  need=${BATTERY_PAUSE_BELOW:-50}
+  case ",$suites," in *,m6,*) case " ${SUITE_ARGS_m6:-} " in *"--minutes 30"*|*"--minutes 4"*|*"--minutes 6"*) need=${BATTERY_PAUSE_LONG:-60} ;; esac ;; esac
+  [ "$nsuites" -ge 5 ] && need=${BATTERY_PAUSE_LONG:-60}
+  b=$(batt_pct)
+  if [ -n "$b" ] && [ "$b" -lt "$need" ]; then
+    purpose=$(sed -n 's/^purpose: //p' "$LOCKFILE")
+    eta_iso=$(sed -n 's/^eta: \([^ ]*\).*/\1/p' "$LOCKFILE")
+    eta_s=$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$eta_iso" +%s 2>/dev/null || echo 0)
+    rem=$(( (eta_s - $(date +%s)) / 60 )); [ "$rem" -ge 60 ] || rem=60
+    echo "$(ts) BATTERY-PAUSE: ${b}% < ${need}% before $fw $variant $tier ($suites); releasing the lock until ${BATTERY_RESUME_AT:-80}%"
+    scripts/gpu_lock.sh release > /dev/null
+    "$PY" -I scripts/quietlib.py battery --min "${BATTERY_RESUME_AT:-80}" --wait 43200 || { echo "$(ts) battery did not recover; stopping"; exit 6; }
+    echo "$(ts) BATTERY-READY: $(batt_pct)%; taking the lock again at $(date -v+10M '+%T') (10 min notice)"
+    sleep 600
+    until scripts/gpu_lock.sh acquire "$purpose" "$rem" > /dev/null 2>&1; do sleep 60; done
+    echo "$(ts) RESUMED: lock taken again ($rem min ETA); battery $(batt_pct)%"
+  fi
+fi
 grep -q '^holder: local_ai-benchmark session' "$HOME/Developer/mlsys/experiments/.gpu-lock" 2>/dev/null \
   || { echo "run_framework: the GPU lock is not held by us; acquire it first" >&2; exit 5; }
 dry=$(scripts/serve.sh "$fw" "$variant" "$tier" --dry-run) || { echo "$dry" | tail -5; exit 4; }

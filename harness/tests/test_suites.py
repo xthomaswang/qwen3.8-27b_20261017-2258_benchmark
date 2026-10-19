@@ -3,7 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from dataclasses import replace
+
 from agentbench.cli import main
+from agentbench.profiles import PROFILES
 
 from conftest import MY_PID, cli_args, start_mock
 
@@ -111,7 +114,9 @@ def test_m7_scores_a_wrong_answer(built, tmp_path):
     assert "schema" in reasons and "expected the items" in reasons
 
 
-def test_run_all_lithos_records_429_and_na(built, tmp_path):
+def test_run_all_lithos_records_429_and_na(built, tmp_path, monkeypatch):
+    # Without the profile's forced text-only, the gate's failed G2 switches the later suites (same process).
+    monkeypatch.setitem(PROFILES, "lithos", replace(PROFILES["lithos"], force_text_only=None))
     root, _ = built
     log = tmp_path / "lithos.log"
     srv, resp = start_mock(root, "lithos", log_path=str(log), token_delay=0.002)
@@ -136,6 +141,22 @@ def test_run_all_lithos_records_429_and_na(built, tmp_path):
     summary = (tmp_path / "lithos-metal" / "summary.md").read_text()
     assert "<!-- agentbench:begin summary t -->" in summary and "### M5 concurrency" in summary
     assert "| G4 |" in (tmp_path / "lithos-metal" / "capabilities.md").read_text()
+
+
+def test_lithos_profile_forces_text_only_in_a_separate_suite_run(built, tmp_path):
+    # run_framework.sh runs one suite per process, so the gate's auto switch never reaches M1; the profile must.
+    root, _ = built
+    log = tmp_path / "lithos.log"
+    srv, _ = start_mock(root, "lithos", log_path=str(log), token_delay=0.002)
+    try:
+        rc = main(["run-all"] + cli_args(srv.url, root, tmp_path, "lithos", "lithos-metal", "--server-log", str(log),
+                                         "--suites", "m1"))
+    finally:
+        srv.stop()
+    assert rc == 0
+    m1 = read(next((tmp_path / "lithos-metal" / "raw").glob("m1-*.jsonl")))
+    assert m1[0]["mode"]["text_only"] and "profile lithos" in m1[0]["mode"]["text_only_reason"]
+    assert all(x["metrics"]["ok"] for x in m1 if x.get("type") == "request")
 
 
 def test_run_all_validates_arguments_first(built, generic, tmp_path):

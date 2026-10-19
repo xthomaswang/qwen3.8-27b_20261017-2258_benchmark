@@ -50,6 +50,7 @@ class Profile:
     structured_format: str = "mlc"  # mlc ({"type": "json_object", "schema": str}) | openai (json_schema) | none
     structured_union: str = "anyOf"  # anyOf | oneOf (MLC's pinned xgrammar ignores oneOf)
     force_text_only: str | None = None  # reason, when metric suites must not send images
+    string_content: bool = False  # strict schema: send an all-text content list as one string
     thinking_reason: str | None = None
 
     # ---------------------------------------------------------------- OpenAI
@@ -61,6 +62,8 @@ class Profile:
                 notes.append("stream_options set to exactly {include_usage: true}")
             b["stream_options"] = {"include_usage": True}
         self._model(b, notes)
+        if self.string_content:
+            self._flatten_text_content(b, notes)
         if self.drop_seed and "seed" in b:
             b.pop("seed")
             notes.append(f"{self.name}: dropped seed (forces the unbatched path without prompt-cache checkpoints)")
@@ -88,6 +91,19 @@ class Profile:
             b.pop("thinking")
             notes.append(f"{self.name}: stripped thinking={th.get('type')!r} (only {list(self.anthropic_thinking_allowed)} accepted)")
         return b, notes
+
+    def _flatten_text_content(self, b: dict[str, Any], notes: list[str]) -> None:
+        """Join content lists made only of text parts into one string, as the chat template would
+        (Qwen's renders text parts back to back). Lists with an image part are left as they are, so
+        the gate's image probes still show the server's own answer."""
+        n = 0
+        for m in b.get("messages") or []:
+            c = m.get("content")
+            if isinstance(c, list) and c and all(isinstance(x, dict) and x.get("type") == "text" for x in c):
+                m["content"] = "".join(x.get("text", "") for x in c)
+                n += 1
+        if n:
+            notes.append(f"{self.name}: sent {n} all-text content list(s) as strings (strict schema)")
 
     def _model(self, b: dict[str, Any], notes: list[str]) -> None:
         if self.model_policy == "omit" and "model" in b:
@@ -120,10 +136,14 @@ PROFILES: dict[str, Profile] = {
     "lithos": Profile("lithos", framework="lithos-metal", port=8704, strip_chat_template_kwargs=True,
                       allowed_efforts=("none",), anthropic_thinking_allowed=("disabled",), can_think=False,
                       concurrency="reject-429", cached_source="server-log",
-                      log_cached_regex=r"'cached_prompt_tokens':\s*(\d+)"),
+                      log_cached_regex=r"'cached_prompt_tokens':\s*(\d+)", string_content=True,
+                      force_text_only="profile lithos: lithos-metal accepts only string message content; "
+                                      "images are rejected (G2)"),
     "vllm": Profile("vllm", framework="vllm-metal", port=8705, reasoning_field="reasoning"),
     "mlxlm": Profile("mlxlm", framework="mlx-lm", port=8701, model_policy="omit", drop_seed=True,
-                     reasoning_field="reasoning", probe_models=False),
+                     reasoning_field="reasoning", probe_models=False,
+                     force_text_only="profile mlxlm: mlx_lm.server accepts only text content parts; "
+                                     "images are rejected (G2)"),
     "mlc": Profile("mlc", framework="mlc-llm", port=8700, strip_chat_template_kwargs=True, allowed_efforts=(),
                    can_think=False, tool_call_mode="structured_output", cached_source="usage-extra",
                    force_text_only="profile mlc: images are unsupported on the MLC nightly path",

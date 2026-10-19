@@ -14,7 +14,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 COOL_S=${COOL_S:-120}
 ts() { date '+%T'; }
-steps=${*:-"m6-llama m6-omlx m6-vllm omlx-8bit vllm-8bit mlxlm-8bit mlxlm-4bit lithos-dspark lithos-nodraft lithos-nvfp4"}
+steps=${*:-"lithos-dspark lithos-nodraft lithos-nvfp4 m6-llama m6-omlx m6-vllm omlx-8bit vllm-8bit mlxlm-8bit mlxlm-4bit"}   # lithos-metal first (the user, 2026-10-18)
 export SUITE_ARGS_m7="--trials 1"   # M7 is deterministic at temperature 0; one pass per prompt
 ( while kill -0 $$ 2>/dev/null; do caffeinate -u -t 1; sleep 60; done ) > /dev/null 2>&1 &   # user activity across the cool-downs too (see run_framework.sh)
 rf=scripts/run_framework.sh

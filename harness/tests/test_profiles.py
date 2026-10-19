@@ -127,3 +127,28 @@ def test_reasoning_fields_and_llamacpp_timings(built, tmp_path):
     rec = asyncio.run(one(resp))
     m = Outcome(rec, [], {}).metrics()
     assert m["cached_source"] == "timings.cache_n" and rec.timings_raw is not None
+
+
+def test_lithos_sends_all_text_content_as_strings():
+    p = get_profile("lithos")
+    msgs = [{"role": "system", "content": "sys"},
+            {"role": "user", "content": [{"type": "text", "text": "[run 1] "}, {"type": "text", "text": "screen text"}]},
+            {"role": "tool", "tool_call_id": "c1", "content": [{"type": "text", "text": "ok"}]},
+            {"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:x"}},
+                                         {"type": "text", "text": "what is this?"}]}]
+    body, notes = p.shape_openai(dict(HERMES_BODY, messages=msgs))
+    assert body["messages"][0]["content"] == "sys"
+    assert body["messages"][1]["content"] == "[run 1] screen text"
+    assert body["messages"][2]["content"] == "ok"
+    assert isinstance(body["messages"][3]["content"], list)  # image probes stay as they are
+    assert any("2 all-text content list(s)" in n for n in notes)
+    assert msgs[1]["content"][0]["type"] == "text"  # the caller's body is not modified
+    body, _ = get_profile("mlxlm").shape_openai(dict(HERMES_BODY, messages=msgs))
+    assert isinstance(body["messages"][1]["content"], list)  # mlx-lm takes text parts
+
+
+@pytest.mark.parametrize("name,forced", [("lithos", True), ("mlxlm", True), ("mlc", True),
+                                         ("llamacpp", False), ("omlx", False), ("vllm", False)])
+def test_text_only_is_forced_for_servers_that_reject_images(name, forced):
+    # Each suite runs in its own process, so the gate's auto switch cannot carry over; the profile must say it.
+    assert bool(get_profile(name).force_text_only) is forced
