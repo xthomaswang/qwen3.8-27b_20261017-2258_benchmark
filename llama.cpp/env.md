@@ -384,3 +384,21 @@ With the default launch flags (`--ctx-checkpoints 32 --checkpoint-min-step 8192 
 - The checkpoint taken near the end of the previous prompt is the one reused, so `--checkpoint-min-step 8192` does not inflate per-step TTFT for 1.7K-token steps. We keep the flags unchanged.
 - The ≈4.9 s per step covers the vision encode of one 1280×1024 screenshot plus ≈1.7K new tokens, an effective ≈350 tok/s.
 - MTP accepted 62–106 of 87–128 drafts per step.
+
+## Measurement environment (Tier-1 results, 2026-10-18)
+
+- **Machine.** MacBook Pro `Mac17,7`, Apple M5 Max, 128 GB. macOS 27.2 (build 26B5101f).
+  Xcode 27.1 (build 27A9275) is the default `xcode-select`, and it was never changed.
+- **Power.** AC through a 96 W USB-C adapter, in High Power mode (`powermode 2`). The adapter
+  cannot supply this machine under sustained GPU load, so the battery drains during runs.
+  The battery rule keeps it at 40 % or more at each suite start and above 20 % throughout
+  (METHODOLOGY.md, "Battery"). Suites measured on a low battery were re-run.
+- **Quiet machine.** As in METHODOLOGY.md. The monitor TSVs next to the results hold every
+  10 s sample; v3 rows also record the battery level and the thermal pressure level.
+- **Paused system daemons.** suggestd was stopped with SIGSTOP from 16:19, and
+  mediaanalysisd and spotlightknowledged from 17:29:33. All three were resumed at 22:02.
+  They were busy with backlogs that the user-activity heartbeat could not defer
+  (METHODOLOGY.md, "Quiet machine").
+- **Provenance.** Each raw file's header records the server flags, the framework version, the
+  harness commit and the pre-flight output.
+- **Launch** (`scripts/serve.sh llama.cpp <variant> 4bit`): `llama-server -c 131072 -ngl all -fa on -ctk f16 -ctv f16 --jinja --reasoning-format deepseek --ctx-checkpoints 32 --checkpoint-min-step 8192 --cache-ram 8192 --metrics --slots --offline`, plus `-np 1 --spec-type none` (`mtp-off`), `-np 1 -md <same GGUF> --spec-type draft-mtp --spec-draft-n-max 3` (`mtp-on`), or `-np 3 -kvu --spec-type none` (`conc`).
