@@ -81,15 +81,9 @@ when resuming.
   - **Our own session counts too.** This session's `claude` process runs at 20–35 % CPU
     while it is working, and it is outside the run's process tree. Stay idle during timed
     suites: no `log show`, no greps, and no summarize.
-- **Anchor: passed** (acceptance fixed before the run; see METHODOLOGY.md §3).
-
-  | Phase | 04:35 run | Anchor, 17:37 | Band |
-  | --- | --- | --- | --- |
-  | warm | 4.361 s (4.066–4.432) | 4.402 s (4.070–4.486) | 4.066–4.432 s |
-  | cold | 31.205 s (31.127–31.362) | 31.390 s (30.941–32.175) | 30.58–31.83 s |
-
-  The night-time llama.cpp and oMLX runs are therefore comparable with today's vLLM-Metal
-  runs.
+- **Anchor: passed** (acceptance fixed before the run; see METHODOLOGY.md §3). The 17:37
+  M1 (battery 96 %) matched the 04:35 run (battery 29 %) within 1 %, warm and cold. The
+  04:35 run was quarantined later anyway, under the battery rule.
 - **G2b, formal and verified.** The verdicts match the afternoon's mechanics runs.
 
   | Framework | G2b: image in `role=tool` (Hermes path) | G3: image in `tool_result` (Claude Code path) | G5 at 64K: TTFT, peak footprint |
@@ -268,7 +262,7 @@ when resuming.
      on. Check the M3 thinking request shape (sampling fields?) and the server-side
      `timings`.
   3. **Drift anchor.** Re-run llama.cpp `mtp-off` M1 under tag `4bit-mtp-off-anchor` and
-     compare it with 04:35 (warm 4.361 s, cold 31.205 s). This checks for thermal or
+     compare it with the 04:35 run. This checks for thermal or
      long-run drift across the block.
   4. **Privacy check before committing.** The monitor TSVs and pre-flight blocks list
      foreign process basenames: Apple apps such as Maps, Music and Mail, and possibly
@@ -395,8 +389,8 @@ Notes:
 ## Next steps (in order)
 
 1. **Interim Chinese summary to the agent-benchmark session** (Tier-1: gates and M1–M7 for
-   the three candidates, with a recommendation). Send it after the PRs; done at 22:20 if
-   the message log says so.
+   the three candidates, with a recommendation). Sent at 22:20, with a follow-up on oMLX's
+   thinking-on TTFT.
 2. **References**, `--text-only`, one at a time with the lock. First give the 10 min notice
    to `localmelo_main`, check the battery (≥ 40 %), and pause busy daemons with the user's
    consent. Then run lithos-metal (`dspark`, `no-draft`, `nvfp4`, with `--server-log`),

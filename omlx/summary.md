@@ -28,6 +28,12 @@
   - The slope is -0.107 s/step over steps 1-20, and +0.068 s/step over steps 2-20.
   - Steps whose tool calls hit the 150-token cap end with an `incomplete_tool_call` stream
     error and report no cached tokens (`-`). They still count as latency samples.
+- **Thinking on costs ~2.5 s of TTFT per step.** With thinking on, the cached prefix is reused
+  only up to a block boundary: 14,336 of 16,000 tokens at 16K, and 30,720 of 32,000 at 32K.
+  Each request therefore re-prefills 1.3–1.7K tokens.
+  - M3 TTFT is 2.7–2.8 s with thinking on, against 0.27–0.41 s with it off.
+  - llama.cpp and vLLM-Metal show no such gap.
+  - M1 and M4 run with thinking off, so an agent step with thinking on pays this on top.
 - **Streaming granularity.** About 3.9 tokens per SSE chunk, with a chunk-gap p50 of
   ~150 ms. The decode rate is unaffected.
 - **The SSD prefix cache persists across restarts,** which is why G1 shows a 1.3 s first call.
