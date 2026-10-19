@@ -448,3 +448,21 @@ since.
 
 **Bonjour is off.** Bonjour and peer discovery only start when distributed inference is
 enabled in settings. It is off in `.bench-home`.
+
+## Measurement environment (Tier-1 results, 2026-10-18)
+
+- **Machine.** MacBook Pro `Mac17,7`, Apple M5 Max, 128 GB. macOS 27.2 (build 26B5101f).
+  Xcode 27.1 (build 27A9275) is the default `xcode-select`, and it was never changed.
+- **Power.** AC through a 96 W USB-C adapter, in High Power mode (`powermode 2`). The adapter
+  cannot supply this machine under sustained GPU load, so the battery drains during runs.
+  The battery rule keeps it at 40 % or more at each suite start and above 20 % throughout
+  (METHODOLOGY.md, "Battery"). Suites measured on a low battery were re-run.
+- **Quiet machine.** As in METHODOLOGY.md. The monitor TSVs next to the results hold every
+  10 s sample; v3 rows also record the battery level and the thermal pressure level.
+- **Paused system daemons.** suggestd was stopped with SIGSTOP from 16:19, and
+  mediaanalysisd and spotlightknowledged from 17:29:33. All three were resumed at 22:02.
+  They were busy with backlogs that the user-activity heartbeat could not defer
+  (METHODOLOGY.md, "Quiet machine").
+- **Provenance.** Each raw file's header records the server flags, the framework version, the
+  harness commit and the pre-flight output.
+- **Launch** (`scripts/serve.sh omlx spec-off 4bit`): `omlx serve --base-path serving/omlx_0.7/.bench-home --headless` on port 8703, with `HOME` and `OMLX_BASE_PATH` pointing into `.bench-home`. The model directory `models/hf-bench` links to the HF cache entry.
