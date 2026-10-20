@@ -15,7 +15,9 @@
 #     lithos-nodraft-fix lithos-nvfp4-fix. lithos has no prefix cache (one M4 run ~40 min), so
 #     its M4 runs once.
 #   oMLX with Lightning MTP on oQ checkpoints that keep the MTP head (2026-10-19 night): oq8-convert
-#     oq4-convert, then omlx-oq8-off omlx-oq8-mtp omlx-oq8-mtp-t1 omlx-oq8-off-t1 and the oq4 set
+#     oq4-convert, then omlx-oq8-off omlx-oq8-mtp omlx-oq8-mtp-t1 omlx-oq8-off-t1 and the oq4 set;
+#     omlx-oq8-mtp-gate omlx-oq4-mtp-gate run the gate with MTP on (G2/G3 images through the MTP
+#     decoder; the other oq steps run the gate with MTP off only)
 #   sampling at the model's own settings (temperature 1.0, top_p 0.95, top_k 20): q8-on-t1
 #     q8-off-t1 q4-on-t1 q4-off-t1 (M3 at 16K/32K, cap 150 and thinking cap 1000; M4 for MTP on)
 # Between steps the machine idles COOL_S seconds (default 120) so each server starts cool.
@@ -68,6 +70,8 @@ for step in $steps; do
                     t=${step#omlx-}; t=${t%-mtp-t1}; SUITE_ARGS_m3="$M3_T1" $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
     omlx-oq8-off-t1|omlx-oq4-off-t1)
                     t=${step#omlx-}; t=${t%-off-t1}; SUITE_ARGS_m3="$M3_T1" $rf omlx spec-off ${t}mtp omlx ${t}mtp-spec-off-t1 m3,m4 --spec-label off --extra-body "$SAMP" ;;
+    omlx-oq8-mtp-gate|omlx-oq4-mtp-gate)
+                    t=${step#omlx-}; t=${t%-mtp-gate}; $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on gate --spec-label on ;;
     mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
     mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
     lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;
