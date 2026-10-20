@@ -8,8 +8,8 @@ when resuming.
 - **The night chain, 23:13:50–06:56:43** (`logs/tier3-20261019-231351.log`, macOS 27.2
   26B5101f, Xcode 27.1 27A9275). Every step returned rc 0 and every suite verified. The lock
   was released early, at 06:57:37. The 07:30/07:50 pause script (`logs/morning_pause.sh`)
-  was stopped, because nothing was left to stop. Both peers know; the user has a meeting
-  08:00–09:00. `localmelo_main` stays paused until the user tells it to continue.
+  was stopped, because nothing was left to stop. Both peer sessions were told; the machine
+  stays free until the user says to continue.
 - **Steps, in order:**
   1. `q4-on-t1`, `q4-off-t1`, `omlx8-t1` (the temperature-1.0 A1 rows);
   2. `oq8-convert` (103 s, 28 GB) and `oq4-convert` (102 s, 16 GB; 166 tensors came out at
@@ -42,14 +42,18 @@ when resuming.
     0, ×2.4–2.9 and ×2.0 at 1.0; oQ4 ×2.2–2.5 and ×1.6–1.8 at 0, ×2.2–2.7 and ×1.7–2.0 at 1.0.
   - With MTP off, oQ is about 4–5 % slower on M4 than the mlx-community checkpoints (oQ4 215
     vs 206 s, oQ8 272 vs 258 s).
-  - M7: oQ4 24/24 (it passes `m7-07-enum`), oQ8 23/24, with MTP on or off.
+  - M7: oQ4 24/24 (it passes `m7-07-enum`), oQ8 23/24, with MTP on or off. One trial per
+    case, and `m7-07-enum` is a borderline case, so this is not a quality ranking of oQ4 over
+    oQ8.
   - The gate with MTP on: G1–G5 pass on both; G2b fails, as on all stock oMLX. G5 64K TTFT
     119.3 s (oQ8) and 105.3 s (oQ4), against 112.7 and 102.4 s with MTP off; the MTP head
     adds about 3 GiB.
   - M6, oQ4 + MTP, 30 min: 12 runs (11 complete) and 233 requests, against 9 runs and
     187–188 requests for llama.cpp Q4 + MTP and oMLX MTP-off. e2e median 5.92 s, last/first
     run 1.02, server tree 26 → peak 33 → end 22 GiB. Its 89 errors are all
-    `incomplete_tool_call` (the 150-token cap), the same 38 % share as oMLX MTP-off.
+    `incomplete_tool_call` (the 150-token cap), the same 38 % share as oMLX MTP-off. Do not
+    compare its −4 GiB tree growth with llama.cpp's +7 GiB: llama.cpp's footprint grows as its
+    mmap'd weights page in (the reason the README uses system GPU memory), not from a leak.
   - The thinking-on TTFT stays about 2.6–3.3 s (the 2048-token prefix-cache boundary).
   - **MTP is faster at temperature 1.0 than at 0 on oMLX** (thinking 28 → 35 tok/s on oQ8),
     the opposite of llama.cpp. A black-box check on the raw outputs shows sampling is
@@ -58,7 +62,8 @@ when resuming.
     (`omlx/patches/mlx_lm_mtp/batch_generator.py`; the server log says "MTP path activated"
     for every request), not mlx-vlm's `_mtp_rounds` (that path, with its coupled RNG, serves
     VLM drafters only). At temperature > 0, `_stochastic_verify_tokens` does standard
-    speculative sampling: drafts drawn from q with the request's filters (`_accept_lp_for`),
+    speculative sampling (with top_k ≤ 64, as here with top_k 20, through
+    `_stochastic_verify_tokens_sparse` on the top-k/top-p support; same structure): drafts drawn from q with the request's filters (`_accept_lp_for`),
     accept when u < p/q, residual max(p − q, 0) at the first rejection. Lossless; expected
     acceptance 1 − TV(p, q). The per-request "accept=a/d" log lines give thinking acceptance
     0.64/0.57 → 0.70/0.73 (oQ8, 16K/32K, temperature 0 → 1.0) and 0.67/0.65 → 0.69/0.70
@@ -81,7 +86,7 @@ when resuming.
   `_unverified/` before the PR.
 - **Still paused:** suggestd (43674) and mediaanalysisd (93568), state T since
   2026-10-18 22:35:45. The user resumes them with `kill -CONT 43674 93568`.
-- **Next (after the meeting, when the user says continue):**
+- **Next (when the user says continue):**
   1. No GPU needed: check whether llama.cpp's MTP drafter returns draft probabilities (the
      acceptance question above); look into the oMLX thinking-prefix cache boundary (`omlx/scheduler.py`: `prefill_step_size` 2048, `_prefill_tail_plan`,
      `_detect_needs_think_prefix`); the lithos summarizer fix; the summary hygiene check.

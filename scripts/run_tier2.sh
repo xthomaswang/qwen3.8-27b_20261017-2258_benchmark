@@ -14,8 +14,9 @@
 #   2026-10-19 additions: omlx-8bit-m3 (thinking-on TTFT at 8-bit), llama-q8-off llama-q8-on
 #     (the Q8_0 GGUF; MTP uses the same Q4_0 draft head), and the M1/M4 re-runs with forced
 #     text-only (commit c9581b1): mlxlm-8bit-fix mlxlm-4bit-fix lithos-dspark-fix
-#     lithos-nodraft-fix lithos-nvfp4-fix. lithos has no prefix cache (one M4 run ~40 min), so
-#     its M4 runs once.
+#     lithos-nodraft-fix lithos-nvfp4-fix. lithos's M4 runs once: the invalid runs (image
+#     content arrays) never hit its prefix cache and took ~40 min; with all-text strings it
+#     caches, and one run takes ~5 min (2026-10-20).
 #   oMLX with Lightning MTP on oQ checkpoints that keep the MTP head (2026-10-19 night): oq8-convert
 #     oq4-convert, then omlx-oq8-off omlx-oq8-mtp omlx-oq8-mtp-t1 omlx-oq8-off-t1 and the oq4 set;
 #     omlx-oq8-mtp-gate omlx-oq4-mtp-gate run the gate with MTP on (G2/G3 images through the MTP
