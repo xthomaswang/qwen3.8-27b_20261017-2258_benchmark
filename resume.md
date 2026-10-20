@@ -66,6 +66,23 @@ when resuming.
     first-load specialization time is not measured.
   - The lock was taken at 09:12, ahead of the 09:20 notice; both peers had confirmed they
     were idle. The `llm-server` checks wait for a later slot.
+  - **Done 09:26–10:20, all 8 runs verified** (one Core AI 16K run was disturbed by `mds` at
+    60 % and repeated). Generation tok/s, Core AI against mlx-lm: 28.46 against 32.91 at
+    512, and 25.41 against 29.58 at 16K, so Core AI is 13–14 % slower; it streams about 12 %
+    more bytes per token. Peak system GPU memory: 34.5 / 41.0 GB against 16.7 / 20.8 GB.
+    This is PR #8 (`coreai/summary.md`). The lock was released at 10:20.
+- **The agent-benchmark session holds the lock from 10:21 to about 12:20.** It reports that
+  the user chose oMLX with MTP as A1/A2: its G2b-patched 0.7.1rc1 (`57620a3f`) with oQ8,
+  converted by that session into its own model dir. In that slot it converts, does a
+  plumbing pass on 8500 and runs harness smoke tests.
+- **Next GPU work, after that slot:**
+  1. M6 for oQ8 with MTP (30 min; the peer asked for it);
+  2. MLC-LLM (`serve.sh` has the `mlc-llm` entry): G1 first with the log open, then the
+     text-only suites;
+  3. the Core AI `llm-server` gate probes (optional);
+  4. M8 tonight, once its tooling exists: 7 scenarios, approved on 2026-10-19 for four
+     frameworks. Its power-limited scenario needs the user to run a `pmset` command with
+     sudo.
 - **Waiting on the user:**
   - suggestd and mediaanalysisd are still paused (the user's own `kill -STOP`);
   - the Spotlight privacy list for `serving` and `models`;
