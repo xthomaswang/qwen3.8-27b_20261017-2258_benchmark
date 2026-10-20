@@ -7,7 +7,10 @@
 #     m6-vllm (15 min). The two finalists get 30 min, the other candidate 15 (METHODOLOGY.md, M6).
 #     M6 gets two repeats: a 30 min window is the most exposed to a daemon burst.
 #     m6-omlx-oq4mtp (30 min): oMLX with Lightning MTP on the oQ4 checkpoint, the frontrunner
-#     after the 2026-10-20 oQ runs.
+#     after the 2026-10-20 oQ runs. m6-omlx-oq8mtp (30 min): the same on oQ8, the A1/A2 choice.
+#   MLC-LLM, text-only reference (2026-10-20): mlc-gate first, then mlc-text (M1-M4, M7; M4 runs
+#     once, because without a prefix cache every step is a cold prefill). Tool calls go through
+#     structured output in constraint mode (mlc-llm/env.md, section 5.4).
 #   8-bit rows, gate + M1/M4/M7: omlx-8bit vllm-8bit mlxlm-8bit
 #   references (the harness switches them to text-only): mlxlm-4bit lithos-dspark
 #     lithos-nodraft lithos-nvfp4
@@ -37,6 +40,7 @@ rf=scripts/run_framework.sh
 SAMP='{"temperature": 1.0, "top_p": 0.95, "top_k": 20}'
 M3_T1="--contexts 16000,32000 --caps 150 --think-contexts 16000,32000 --think-caps 1000"
 OMLX_PY="$HOME/Developer/mlsys/serving/omlx_0.7/.venv/bin/python"   # oQ conversion (scripts/oq_convert.py)
+MLC_BODY='{"debug_config": {"grammar_execution_mode": "constraint"}}'   # jump-forward rolls back the GDN state
 first=1 failed=""
 for step in $steps; do
   [ "$first" = 1 ] || { echo "$(ts) cool-down ${COOL_S}s"; sleep "$COOL_S"; }
@@ -47,6 +51,9 @@ for step in $steps; do
     m6-omlx)        QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx spec-off 4bit omlx 4bit-spec-off m6 --spec-label off ;;
     m6-vllm)        QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 15" $rf vllm-metal spec-off 4bit vllm 4bit-spec-off m6 --spec-label off ;;
     m6-omlx-oq4mtp) QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx mtp-on oq4mtp omlx oq4mtp-mtp-on m6 --spec-label on ;;
+    m6-omlx-oq8mtp) QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx mtp-on oq8mtp omlx oq8mtp-mtp-on m6 --spec-label on ;;
+    mlc-gate)       $rf mlc-llm server 4bit mlc 4bit gate --spec-label off --extra-body "$MLC_BODY" ;;
+    mlc-text)       SUITE_ARGS_m4="--runs 1" $rf mlc-llm server 4bit mlc 4bit m1,m2,m3,m4,m7 --spec-label off --extra-body "$MLC_BODY" ;;
     omlx-8bit)      $rf omlx spec-off 8bit omlx 8bit-spec-off gate,m1,m4,m7 --spec-label off ;;
     vllm-8bit)      $rf vllm-metal spec-off 8bit vllm 8bit-spec-off gate,m1,m4,m7 --spec-label off ;;
     mlxlm-8bit)     $rf mlx-lm server 8bit mlxlm 8bit gate,m1,m4,m7 --spec-label off ;;
