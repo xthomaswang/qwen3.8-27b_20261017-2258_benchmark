@@ -6,6 +6,8 @@
 #   M6 (sustained 20-step trajectory loop): m6-llama (MTP on, 30 min) m6-omlx (30 min)
 #     m6-vllm (15 min). The two finalists get 30 min, the other candidate 15 (METHODOLOGY.md, M6).
 #     M6 gets two repeats: a 30 min window is the most exposed to a daemon burst.
+#     m6-omlx-oq4mtp (30 min): oMLX with Lightning MTP on the oQ4 checkpoint, the frontrunner
+#     after the 2026-10-20 oQ runs.
 #   8-bit rows, gate + M1/M4/M7: omlx-8bit vllm-8bit mlxlm-8bit
 #   references (the harness switches them to text-only): mlxlm-4bit lithos-dspark
 #     lithos-nodraft lithos-nvfp4
@@ -43,6 +45,7 @@ for step in $steps; do
     m6-llama)       QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf llama.cpp mtp-on 4bit llamacpp 4bit-mtp-on m6 --spec-label on ;;
     m6-omlx)        QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx spec-off 4bit omlx 4bit-spec-off m6 --spec-label off ;;
     m6-vllm)        QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 15" $rf vllm-metal spec-off 4bit vllm 4bit-spec-off m6 --spec-label off ;;
+    m6-omlx-oq4mtp) QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx mtp-on oq4mtp omlx oq4mtp-mtp-on m6 --spec-label on ;;
     omlx-8bit)      $rf omlx spec-off 8bit omlx 8bit-spec-off gate,m1,m4,m7 --spec-label off ;;
     vllm-8bit)      $rf vllm-metal spec-off 8bit vllm 8bit-spec-off gate,m1,m4,m7 --spec-label off ;;
     mlxlm-8bit)     $rf mlx-lm server 8bit mlxlm 8bit gate,m1,m4,m7 --spec-label off ;;
