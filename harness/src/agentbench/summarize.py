@@ -81,12 +81,16 @@ def table(head: list[str], rows: list[list[str]]) -> str:
                      + ["| " + " | ".join(r) + " |" for r in rows])
 
 
-CAP_TRUNCATED = ("incomplete_tool_call",)  # oMLX: the token cap cut a tool call; the stream ends with this error
+CAP_TRUNCATED = (
+    "incomplete_tool_call",  # oMLX: the token cap cut a tool call; the stream ends with this error code
+    "incomplete tool call; increase the output budget",  # lithos-metal: the same case, by message
+)
 
 
 def cap_truncated(m: dict) -> bool:
     """The stream produced tokens and ended at the token cap inside a tool call, which the server
-    flagged as a stream error. llama.cpp reports the same case as finish_reason=length."""
+    flagged as a stream error (oMLX and lithos-metal). llama.cpp reports the same case as
+    finish_reason=length."""
     err = m.get("error") or ""
     return (not m["ok"] and m.get("ttft_s") is not None and m.get("e2e_s") is not None
             and any(c in err for c in CAP_TRUNCATED))
@@ -99,10 +103,14 @@ def _ok(lines: list[dict]) -> list[dict]:
 
 
 def truncation_note(lines: list[dict]) -> str:
-    n = sum(1 for ln in lines if cap_truncated(ln["metrics"]))
-    return (f"\n\n{n} of {len(lines)} requests ended at the token cap inside a tool call, and the server "
-            "flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no "
-            "usage chunk, so they report no cached tokens.") if n else ""
+    errs = [ln["metrics"]["error"] for ln in lines if cap_truncated(ln["metrics"])]
+    if not errs:
+        return ""
+    flag = ("an `incomplete_tool_call` stream error" if all("incomplete_tool_call" in e for e in errs)
+            else 'a stream error ("incomplete tool call")')
+    return (f"\n\n{len(errs)} of {len(lines)} requests ended at the token cap inside a tool call, and the server "
+            f"flagged it as {flag}. They count as latency samples. They have no "
+            "usage chunk, so they report no cached tokens.")
 
 
 # ------------------------------------------------------------------ suites

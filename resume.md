@@ -70,10 +70,11 @@ when resuming.
   - lithos does have a prefix cache once all-text content is sent as strings: M1 warm TTFT
     5.0 s with 14,908 tokens cached, against 40.3 s cold. The earlier "no prefix cache"
     note came from the invalid runs; correct it in the summary.
-  - Its M4 counts the 150-token cap truncation ("The model generated an incomplete tool
-    call; increase the output budget", a stream error) as a plain error with no latency,
-    while oMLX's `incomplete_tool_call` counts as a latency sample. The dspark total of
-    320 s leaves out 8 of 21 steps. Fix the harness summarizer before publishing.
+  - Its M4 per-step table counted the 150-token cap truncation ("The model generated an
+    incomplete tool call; increase the output budget", a stream error) as a plain error with
+    no latency sample, while oMLX's `incomplete_tool_call` counts as one. The run totals were
+    always right: `m4.py` sums e2e over every request, truncated ones included (dspark 320 s
+    = 208 s ok + 112 s truncated). Summarizer fix below.
 - **Summary hygiene.** Before tonight, five summary sections cited quarantined files (lithos
   `4bit-no-draft` and `nvfp4-dspark` M1/M4, llama.cpp `8bit-mtp-off` M3). All five were
   re-run tonight. Regenerate every summary and check that no `Source:` points into

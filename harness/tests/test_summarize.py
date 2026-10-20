@@ -89,6 +89,26 @@ def test_cap_truncated_streams_count_as_latency_samples():
     assert "1 of 4 requests ended at the token cap" in md
 
 
+def test_lithos_cap_truncation_counts_like_omlx():
+    """lithos-metal reports the cap cutting a tool call by message ("incomplete tool call; increase
+    the output budget", code invalid_tool_call). It is the same case as oMLX's code; a genuinely
+    invalid tool call ("retry the request") stays an error."""
+    from agentbench.summarize import cap_truncated, truncation_note
+
+    def m(err):
+        return {"ok": False, "error": err, "ttft_s": 5.5, "e2e_s": 8.3}
+
+    lithos = ("stream_error: {'message': 'The model generated an incomplete tool call; increase the output "
+              "budget', 'type': 'server_error', 'code': 'invalid_tool_call'}")
+    invalid = ("stream_error: {'message': 'The model generated an invalid tool call; retry the request', "
+               "'type': 'server_error', 'code': 'invalid_tool_call'}")
+    assert cap_truncated(m(lithos)) and not cap_truncated(m(invalid))
+    note = truncation_note([{"metrics": m(lithos)}, {"metrics": m(invalid)}])
+    assert "1 of 2 requests ended at the token cap" in note and '("incomplete tool call")' in note
+    omlx = "stream_error: {'message': 'Model output contains an unrecoverable tool call.', 'code': 'incomplete_tool_call'}"
+    assert "`incomplete_tool_call` stream error" in truncation_note([{"metrics": m(omlx)}])
+
+
 def test_m4_slope_with_and_without_step_1():
     """oMLX's prefix cache does not reuse the step-0 prompt at step 1, so step 1 is a near-full
     re-prefill (~17.9 s against ~3.7 s from step 2 on) that skews the slope over steps 1-N. The
