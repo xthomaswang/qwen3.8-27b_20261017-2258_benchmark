@@ -126,7 +126,7 @@ build_llama() {
 }
 
 build_omlx() {
-  case "$TIER" in 8bit|4bit) ;; *) bad_tier "8bit 4bit" ;; esac
+  case "$TIER" in 8bit|4bit) ;; oq4mtp|oq8mtp) build_omlx_oq; return ;; *) bad_tier "8bit 4bit oq4mtp oq8mtp" ;; esac
   case "$VARIANT" in
     spec-off) ;;
     spec-on) unsupported "oMLX speculative decoding cannot run from local files. Lightning MTP \
@@ -171,6 +171,40 @@ except Exception:
   PROV+=("$(dist_versions "$WORKDIR/.venv" omlx mlx mlx_lm mlx_vlm)")
   NOTES+=("HOME is isolated to .bench-home/home so the cluster shim and reaper never touch ~/.omlx")
   NOTES+=("models load on the first request (none is pinned); hf-bench lists every linked tier, so send exactly \"$id\"")
+}
+
+# The oQ checkpoints that keep the MTP head (scripts/oq_convert.py), for oMLX's Lightning MTP.
+# Same server, base path and kernels as the mlx-community tiers; the variant decides
+# mtp_enabled for the model, written to model_settings.json just before the launch.
+build_omlx_oq() {
+  local lvl=${TIER#oq}; lvl=${lvl%mtp}
+  local exe base models id="Qwen3.8-27B-oQ$lvl-mtp" dir ctx
+  case "$VARIANT" in spec-off) OMLX_MTP=false ;; mtp-on) OMLX_MTP=true ;; *) bad_variant "spec-off mtp-on (oQ tiers)" ;; esac
+  exe=$(fw_exe omlx)
+  WORKDIR="$SERVING/omlx_0.7"; base="$WORKDIR/.bench-home"; models="$MLSYS/models/hf-bench"; dir="$MLSYS/models/oq/$id"
+  need_exe "$exe"
+  if [ -f "$dir/config.json" ] && ls "$dir"/*.safetensors >/dev/null 2>&1; then
+    ok "oQ checkpoint $(tilde "$dir")"; CKPTS+=("$(tilde "$dir") (local oQ$lvl, MTP head kept)")
+  else
+    need "missing oQ checkpoint $dir (run scripts/oq_convert.py --level $lvl)"; CKPTS+=("$(tilde "$dir") (NOT READY)")
+  fi
+  if [ -L "$models/$id" ]; then ok "model link $(tilde "$models/$id")"; else need "model link $models/$id missing (scripts/oq_convert.py --register-only --level $lvl)"; fi
+  local read_ctx='import json, sys
+try:
+    print(json.load(open(sys.argv[1]))["models"][sys.argv[2]].get("max_context_window", ""))
+except Exception:
+    print("")'
+  ctx=$("$PY" -I -c "$read_ctx" "$base/model_settings.json" "$id" 2>/dev/null || true)
+  if [ "$ctx" = 131072 ]; then ok "max_context_window 131072 for $id"; else need "max_context_window for $id is '${ctx:-unset}', want 131072 (scripts/oq_convert.py --register-only --level $lvl)"; fi
+  OMLX_SETTINGS="$base/model_settings.json" OMLX_SETTINGS_ID=$id
+  mkdir -p "$base/home"
+  ENVV+=(HOME="$base/home" OMLX_BASE_PATH="$base" OMLX_HOST=127.0.0.1 OMLX_PORT="$PORT" OMLX_MODEL_DIR="$models"
+         OMLX_HF_CACHE_ENABLED=false PYTHONUNBUFFERED=1)
+  CMD=("$exe" serve --base-path "$base" --headless)
+  MODEL_ID=$id
+  PROV+=("$(dist_versions "$WORKDIR/.venv" omlx mlx mlx_lm mlx_vlm)")
+  NOTES+=("mtp_enabled=$OMLX_MTP for $id (model_settings.json, written before the launch); MTP depth is oMLX's adaptive default")
+  NOTES+=("HOME is isolated to .bench-home/home so the cluster shim and reaper never touch ~/.omlx")
 }
 
 build_vllm() {
@@ -335,6 +369,14 @@ fi
 [ "${#REFUSE[@]}" -eq 0 ] || die "$EX_REFUSED" "refused; nothing started"
 
 mkdir -p "$LOG_DIR"
+if [ -n "${OMLX_SETTINGS:-}" ]; then   # oQ tiers: set mtp_enabled for this launch (the server is down)
+  "$PY" -I -c 'import json, sys
+p, mid, on = sys.argv[1], sys.argv[2], sys.argv[3] == "true"
+d = json.load(open(p))
+d.setdefault("models", {}).setdefault(mid, {})["mtp_enabled"] = on
+open(p + ".tmp", "w").write(json.dumps(d, indent=2) + "\n")
+import os; os.replace(p + ".tmp", p)' "$OMLX_SETTINGS" "$OMLX_SETTINGS_ID" "$OMLX_MTP" || die "$EX_NOT_READY" "could not write mtp_enabled"
+fi
 cmdfile > "$CMDF.tmp.$$" && mv -f "$CMDF.tmp.$$" "$CMDF"
 printf '%s\n' "$$" > "$PIDF.tmp.$$" && mv -f "$PIDF.tmp.$$" "$PIDF"
 caffeinate -ims -w "$$" >/dev/null 2>&1 &          # no idle/system sleep while the server lives

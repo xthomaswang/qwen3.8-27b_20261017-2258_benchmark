@@ -14,6 +14,8 @@
 #     text-only (commit c9581b1): mlxlm-8bit-fix mlxlm-4bit-fix lithos-dspark-fix
 #     lithos-nodraft-fix lithos-nvfp4-fix. lithos has no prefix cache (one M4 run ~40 min), so
 #     its M4 runs once.
+#   oMLX with Lightning MTP on oQ checkpoints that keep the MTP head (2026-10-19 night): oq8-convert
+#     oq4-convert, then omlx-oq8-off omlx-oq8-mtp omlx-oq8-mtp-t1 omlx-oq8-off-t1 and the oq4 set
 #   sampling at the model's own settings (temperature 1.0, top_p 0.95, top_k 20): q8-on-t1
 #     q8-off-t1 q4-on-t1 q4-off-t1 (M3 at 16K/32K, cap 150 and thinking cap 1000; M4 for MTP on)
 # Between steps the machine idles COOL_S seconds (default 120) so each server starts cool.
@@ -29,6 +31,7 @@ rf=scripts/run_framework.sh
 # acceptance is lower than under greedy decoding, so the *-t1 steps re-measure the MTP gain.
 SAMP='{"temperature": 1.0, "top_p": 0.95, "top_k": 20}'
 M3_T1="--contexts 16000,32000 --caps 150 --think-contexts 16000,32000 --think-caps 1000"
+OMLX_PY="$HOME/Developer/mlsys/serving/omlx_0.7/.venv/bin/python"   # oQ conversion (scripts/oq_convert.py)
 first=1 failed=""
 for step in $steps; do
   [ "$first" = 1 ] || { echo "$(ts) cool-down ${COOL_S}s"; sleep "$COOL_S"; }
@@ -54,6 +57,17 @@ for step in $steps; do
     q4-on-t1)       SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-on 4bit llamacpp 4bit-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
     q4-off-t1)      SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-t1 m3 --spec-label off --extra-body "$SAMP" ;;
     omlx8-t1)       $rf omlx spec-off 8bit omlx 8bit-spec-off-t1 m4 --spec-label off --extra-body "$SAMP" ;;
+    oq8-convert|oq4-convert)
+                    lvl=${step#oq}; lvl=${lvl%-convert}
+                    HF_HUB_OFFLINE=1 "$OMLX_PY" -u scripts/oq_convert.py --level "$lvl" ;;
+    omlx-oq8-off|omlx-oq4-off)
+                    t=${step#omlx-}; t=${t%-off}; $rf omlx spec-off ${t}mtp omlx ${t}mtp-spec-off gate,m1,m3,m4,m7 --spec-label off ;;
+    omlx-oq8-mtp|omlx-oq4-mtp)
+                    t=${step#omlx-}; t=${t%-mtp}; $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on m1,m3,m4,m7 --spec-label on ;;
+    omlx-oq8-mtp-t1|omlx-oq4-mtp-t1)
+                    t=${step#omlx-}; t=${t%-mtp-t1}; SUITE_ARGS_m3="$M3_T1" $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
+    omlx-oq8-off-t1|omlx-oq4-off-t1)
+                    t=${step#omlx-}; t=${t%-off-t1}; SUITE_ARGS_m3="$M3_T1" $rf omlx spec-off ${t}mtp omlx ${t}mtp-spec-off-t1 m3,m4 --spec-label off --extra-body "$SAMP" ;;
     mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
     mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
     lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;
