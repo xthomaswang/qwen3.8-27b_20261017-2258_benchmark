@@ -9,6 +9,8 @@
 #                      on the first request (none is pinned).
 #   8704 lithos-metal  GET /health 200. The port opens only after packing and warmup.
 #   8705 vLLM-Metal    GET /health 200 (503 until the engine is up).
+#   8706 Core AI       GET /health 200. The port opens only after load, specialization and
+#                      warm-up (the first 27B load specializes it).
 # The harness warm-up request absorbs any remaining load time (8701, 8703).
 # Fails early if the PID in logs/<framework>.pid exits.
 # Exit codes: 0 ready, 1 timeout, 2 usage, 3 the server process exited.

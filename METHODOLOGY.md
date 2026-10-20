@@ -162,6 +162,7 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
   | oMLX | 8703 |
   | lithos-metal | 8704 |
   | vLLM-Metal | 8705 |
+  | Core AI (`llm-server`) | 8706 |
 
   8500 and 8600–8699 belong to the agent benchmark and are never used here.
 - **Model.** Qwen3.8-27B. The formats below are not bit-identical; each row says which one

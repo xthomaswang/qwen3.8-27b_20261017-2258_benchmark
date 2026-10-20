@@ -11,6 +11,11 @@
 #   MLC-LLM, text-only reference (2026-10-20): mlc-gate first, then mlc-text (M1-M4, M7; M4 runs
 #     once, because without a prefix cache every step is a cold prefill). Tool calls go through
 #     structured output in constraint mode (mlc-llm/env.md, section 5.4).
+#     mlc-text-trim: every MLC request is a cold prefill (126 tok/s at 13K, 78 tok/s at 64K in the
+#     gate), so the full set takes about 9 h. This one runs M1 (2 + 2 trials), M2 at 16K / 32K,
+#     M3 at 16K / 32K with cap 150 and no thinking bucket (thinking is fixed per chat config),
+#     and M7: about 2 h.
+#   Core AI llm-server (port 8706): coreai-gate, the gate with the generic profile.
 #   8-bit rows, gate + M1/M4/M7: omlx-8bit vllm-8bit mlxlm-8bit
 #   references (the harness switches them to text-only): mlxlm-4bit lithos-dspark
 #     lithos-nodraft lithos-nvfp4
@@ -54,6 +59,10 @@ for step in $steps; do
     m6-omlx-oq8mtp) QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx mtp-on oq8mtp omlx oq8mtp-mtp-on m6 --spec-label on ;;
     mlc-gate)       $rf mlc-llm server 4bit mlc 4bit gate --spec-label off --extra-body "$MLC_BODY" ;;
     mlc-text)       SUITE_ARGS_m4="--runs 1" $rf mlc-llm server 4bit mlc 4bit m1,m2,m3,m4,m7 --spec-label off --extra-body "$MLC_BODY" ;;
+    mlc-text-trim)  SUITE_ARGS_m1="--trials 2 --cold-trials 2" SUITE_ARGS_m2="--sizes 16000,32000" \
+                    SUITE_ARGS_m3="--contexts 16000,32000 --caps 150 --no-thinking-bucket" \
+                    $rf mlc-llm server 4bit mlc 4bit m1,m2,m3,m7 --spec-label off --extra-body "$MLC_BODY" ;;
+    coreai-gate)    $rf coreai server 4bit generic 4bit gate --spec-label off ;;
     omlx-8bit)      $rf omlx spec-off 8bit omlx 8bit-spec-off gate,m1,m4,m7 --spec-label off ;;
     vllm-8bit)      $rf vllm-metal spec-off 8bit vllm 8bit-spec-off gate,m1,m4,m7 --spec-label off ;;
     mlxlm-8bit)     $rf mlx-lm server 8bit mlxlm 8bit gate,m1,m4,m7 --spec-label off ;;

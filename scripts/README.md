@@ -40,6 +40,7 @@ scripts/gpu_lock.sh release
 | omlx | `spec-off`; `spec-on` is a stub | 8bit 4bit | 8703 | `mlx-community--Qwen3.8-27B-<tier>` | `scripts/omlx_configure.sh` (done 2026-10-18) |
 | lithos-metal | `dspark` `no-draft` | 4bit nvfp4 | 8704 | `Qwen3.8-27B-4bit` / `nvidia/Qwen3.8-27B-NVFP4` | 4bit: apply `lithos-metal/lm_head_rename.patch` (`lithos-metal/env.md` §4) |
 | vllm-metal | `spec-off`; `spec-on` is a stub | 8bit 4bit | 8705 | `qwen3.8-27b-<tier>` | `scripts/make_procfix.sh <tier>` (both views exist) |
+| coreai | `server` (`llm-server`, `DEVELOPER_DIR` set to Xcode-beta for this process only) | 4bit (`qwen3_5_cfg` bundle) | 8706 | `qwen3_8_27b_qwen3_5_cfg_dynamic` | the export and the `llm-server` build (`coreai/env.md` §2, §4.2); harness profile `generic` |
 
 The launch commands are the ones in each `<framework>/env.md`. Deviations:
 

@@ -14,10 +14,11 @@
 #   lithos-metal  dspark no-draft            4bit nvfp4   8704
 #   vllm-metal    spec-off  (spec-on: stub)  8bit 4bit    8705
 #   mlc-llm       server think               4bit         8700  (q4f16_1 source build; text only)
+#   coreai        server                     4bit         8706  (llm-server, qwen3_5_cfg bundle; text only)
 #
 # --dry-run runs every check and prints the exact command; it writes and starts nothing.
 # A real run also needs our GPU lock (scripts/gpu_lock.sh acquire), port 8500 free and no
-# server on 8701-8705. Words after `--` are appended to the server command (e.g. -lv 4).
+# server on 8700-8706. Words after `--` are appended to the server command (e.g. -lv 4).
 # LLAMA_MMPROJ=0 drops --mmproj for llama.cpp (the llama.cpp/env.md fallback for MTP + mmproj).
 # Exit codes: 2 usage, 4 checkpoint/config not ready, 5 refused (lock/ports), 6 unsupported variant.
 set -euo pipefail
@@ -314,6 +315,24 @@ build_mlc() {
   NOTES+=("thinking is fixed by the model dir: variant server = off, think = on (no per-request switch)")
 }
 
+build_coreai() {
+  case "$TIER" in 4bit) ;; *) bad_tier "4bit (qwen3_5_cfg: uint4 per block of 32)" ;; esac
+  case "$VARIANT" in server) ;; *) bad_variant "server" ;; esac
+  local exe m xc; exe=$(fw_exe coreai)
+  WORKDIR="$SERVING/coreai-models"
+  m="$MLSYS/models/coreai/qwen3_8_27b_qwen3_5_cfg_dynamic"
+  xc=/Applications/Xcode-beta.app/Contents/Developer   # Core AI builds and runs against the beta; xcode-select stays as is
+  need_exe "$exe"
+  if [ -f "$m/metadata.json" ]; then ok "model bundle $(tilde "$m")"; else need "missing Core AI bundle $m (coreai/env.md section 4.2)"; fi
+  if [ -d "$xc" ]; then ok "DEVELOPER_DIR $xc"; else need "missing $xc"; fi
+  ENVV+=(DEVELOPER_DIR="$xc")
+  # The server default temperature is 0.7; requests carry their own max_tokens (default 512 otherwise).
+  CMD=("$exe" --model "$m" --port "$PORT" --server-model-name "${m##*/}" --temperature 0 --max-tokens 4096 --verbose)
+  MODEL_ID="${m##*/}"
+  NOTES+=("text-only bundle: images are dropped without an error, there is no /v1/messages, and reasoning streams as content (coreai/env.md section 6)")
+  NOTES+=("the port opens only after load, specialization and warm-up; the first llm-server load of the 27B specializes it (about 17 GB in ~/Library/Caches/coreai-cache)")
+}
+
 say "== serve.sh $FW $VARIANT $TIER$( [ "$DRY" -eq 1 ] && printf '  (dry run)' )"
 say "checks:"
 case "$FW" in
@@ -323,6 +342,7 @@ case "$FW" in
   vllm-metal) build_vllm ;;
   lithos-metal) build_lithos ;;
   mlc-llm) build_mlc ;;
+  coreai) build_coreai ;;
 esac
 ENVV=(HF_HUB_OFFLINE=1 HF_HOME="$HF_HOME" ${ENVV[@]+"${ENVV[@]}"})
 
@@ -333,7 +353,7 @@ elif lock_exists; then refuse "the GPU lock is held by the other side ($GPU_LOCK
 else refuse "GPU lock not held (scripts/gpu_lock.sh acquire <purpose> <eta-minutes>)"; fi
 if [ -n "$(listen_pids "$PEER_PORT")" ]; then refuse "port 8500 is up — ask the agent-benchmark session to stop it"; else ok "port 8500 free"; fi
 UP=$(our_listeners)
-if [ -n "$UP" ]; then refuse "a server already listens (port pid): $(echo $UP)"; else ok "ports 8700-8705 free"; fi
+if [ -n "$UP" ]; then refuse "a server already listens (port pid): $(echo $UP)"; else ok "ports 8700-8706 free"; fi
 PIDF=$(pidfile_of "$FW")
 if [ -f "$PIDF" ] && pid_alive "$(head -1 "$PIDF")"; then refuse "${PIDF#"$BENCH_DIR"/}: PID $(head -1 "$PIDF") is still running"; fi
 

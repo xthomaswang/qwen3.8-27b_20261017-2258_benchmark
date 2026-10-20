@@ -3,7 +3,7 @@
 Legacy mode (no responder): the scenario is chosen by the `x-mock-scenario` request header
 (default "text"). With a `responder` (see agentbench.mock_smart.SmartResponder) every
 request is answered by it instead. Bind to an ephemeral port (port=0) in tests, or
-8790-8799 for manual runs; never to 8500, 8600-8699 or the frameworks' 8700-8705.
+8790-8799 for manual runs; never to 8500, 8600-8699 or the frameworks' 8700-8706.
 """
 
 from __future__ import annotations

@@ -13,8 +13,8 @@ HF_HUB="${HF_HUB_CACHE:-$HF_HOME/hub}"
 GPU_LOCK="${GPU_LOCK_PATH:-$MLSYS/experiments/.gpu-lock}"   # GPU_LOCK_PATH: tests only
 LOCK_HOLDER="local_ai-benchmark session"
 PEER_PORT=8500                       # the agent-benchmark session's oMLX
-OUR_PORTS="8700 8701 8702 8703 8704 8705"
-FRAMEWORKS="mlx-lm llama.cpp omlx lithos-metal vllm-metal mlc-llm"
+OUR_PORTS="8700 8701 8702 8703 8704 8705 8706"
+FRAMEWORKS="mlx-lm llama.cpp omlx lithos-metal vllm-metal mlc-llm coreai"
 PY="${BENCH_PYTHON:-/usr/bin/python3}"   # stdlib-only helpers; always run with -I
 
 # Exit codes shared by the scripts (see scripts/README.md).
@@ -39,20 +39,23 @@ quote_cmd() { local out='' w; for w in "$@"; do out="$out${out:+ }$(q "$w")"; do
 fw_port() {
   case "$1" in
     mlx-lm) echo 8701 ;; llama.cpp) echo 8702 ;; omlx) echo 8703 ;;
-    lithos-metal) echo 8704 ;; vllm-metal) echo 8705 ;; mlc-llm) echo 8700 ;; *) return 1 ;;
+    lithos-metal) echo 8704 ;; vllm-metal) echo 8705 ;; mlc-llm) echo 8700 ;; coreai) echo 8706 ;;
+    *) return 1 ;;
   esac
 }
 port_fw() {
   case "$1" in
     8701) echo mlx-lm ;; 8702) echo llama.cpp ;; 8703) echo omlx ;;
-    8704) echo lithos-metal ;; 8705) echo vllm-metal ;; 8700) echo mlc-llm ;; *) return 1 ;;
+    8704) echo lithos-metal ;; 8705) echo vllm-metal ;; 8700) echo mlc-llm ;; 8706) echo coreai ;;
+    *) return 1 ;;
   esac
 }
 fw_srcdir() {
   case "$1" in
     mlx-lm) echo "$SERVING/mlx-lm" ;; llama.cpp) echo "$SERVING/llama.cpp" ;;
     omlx) echo "$SERVING/omlx_0.7" ;; lithos-metal) echo "$SERVING/lithos-metal" ;;
-    vllm-metal) echo "$SERVING/vllm-metal" ;; mlc-llm) echo "$SERVING/mlc-llm_bench" ;; *) return 1 ;;
+    vllm-metal) echo "$SERVING/vllm-metal" ;; mlc-llm) echo "$SERVING/mlc-llm_bench" ;;
+    coreai) echo "$SERVING/coreai-models" ;; *) return 1 ;;
   esac
 }
 # The executable our serve.sh launches; its path appears in the server's command line.
@@ -63,7 +66,8 @@ fw_exe() {
     omlx) echo "$SERVING/omlx_0.7/.venv/bin/omlx" ;;
     lithos-metal) echo "$SERVING/lithos-metal/.venv/bin/lithos-metal" ;;
     vllm-metal) echo "$SERVING/vllm-metal/.venv/bin/vllm" ;;
-    mlc-llm) echo "$SERVING/mlc-llm_bench/.venv/bin/python" ;; *) return 1 ;;
+    mlc-llm) echo "$SERVING/mlc-llm_bench/.venv/bin/python" ;;
+    coreai) echo "$SERVING/coreai-models/.build/out/Products/Release/llm-server" ;; *) return 1 ;;
   esac
 }
 is_framework() { case " $FRAMEWORKS " in *" $1 "*) return 0 ;; esac; return 1; }
@@ -99,7 +103,7 @@ iso_to_s() { /bin/date -j -f '%Y-%m-%dT%H:%M:%S%z' "$1" +%s 2>/dev/null; }
 lock_exists() { [ -e "$GPU_LOCK" ] || [ -L "$GPU_LOCK" ]; }
 lock_is_ours() { lock_exists && [ "$(grep -m1 '^holder:' "$GPU_LOCK" 2>/dev/null || true)" = "holder: $LOCK_HOLDER" ]; }
 
-# Our servers that are still up: "port pid" per line, for 8701-8705 listeners.
+# Our servers that are still up: "port pid" per line, for 8700-8706 listeners.
 our_listeners() { local p x; for p in $OUR_PORTS; do for x in $(listen_pids "$p"); do echo "$p $x"; done; done; }
 
 # Decide whether a PID from our pidfile really is the server serve.sh started.

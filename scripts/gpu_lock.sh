@@ -8,7 +8,7 @@
 #
 # acquire keeps the lock when port 8500 is up (exit 3): ask the agent-benchmark session to
 # stop its oMLX, then start timing. release refuses while one of our servers still listens on
-# 8701-8705 (stop it first, or pass --force). The holder line names the session, not an agent,
+# 8700-8706 (stop it first, or pass --force). The holder line names the session, not an agent,
 # so release deletes any lock of this session: only whoever acquired it should release it.
 # GPU_LOCK_PATH overrides the path; tests must use it and never touch the real lock.
 set -euo pipefail
