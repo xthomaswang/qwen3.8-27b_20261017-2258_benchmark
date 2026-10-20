@@ -1,9 +1,88 @@
 # Resume — current progress
 
-Updated: 2026-10-19 15:10 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-20 07:10 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-19 15:10): paused by the user (laptop taken out)
+## Current state (2026-10-20 07:10): night chain done, lock released
+
+- **The night chain, 23:13:50–06:56:43** (`logs/tier3-20261019-231351.log`, macOS 27.2
+  26B5101f, Xcode 27.1 27A9275). Every step returned rc 0 and every suite verified. The lock
+  was released early, at 06:57:37. The 07:30/07:50 pause script (`logs/morning_pause.sh`)
+  was stopped, because nothing was left to stop. Both peers know; the user has a meeting
+  08:00–09:00. `localmelo_main` stays paused until the user tells it to continue.
+- **Steps, in order:**
+  1. `q4-on-t1`, `q4-off-t1`, `omlx8-t1` (the temperature-1.0 A1 rows);
+  2. `oq8-convert` (103 s, 28 GB) and `oq4-convert` (102 s, 16 GB; 166 tensors came out at
+     5-bit), written to `~/Developer/mlsys/models/oq/Qwen3.8-27B-oQ{8,4}-mtp` and linked
+     from `models/hf-bench` (`scripts/oq_convert.py`, preserve_mtp=True);
+  3. `omlx-oq{8,4}-off`, `-mtp`, `-mtp-t1`, `-off-t1`;
+  4. `mlxlm-8bit-fix`;
+  5. relaunched at 04:41 on the agent-benchmark session's request (G2/G3 images through the
+     MTP decoder): `omlx-oq8-mtp-gate`, `omlx-oq4-mtp-gate` (commit `bea3159`), then
+     `mlxlm-4bit-fix`, `lithos-dspark-fix`, `lithos-nvfp4-fix`, `llama-q8-off-m3`;
+  6. a follow-up at 06:10: `lithos-nodraft-fix` and `m6-omlx-oq4mtp` (commit `4bde80d`).
+- **Automatic repeats, quarantined:** `omlx-oq4-mtp` M1 (MTLCompilerService at 48 % at
+  03:09:10, the first MTP shader compile) and `omlx-oq4-off-t1` M4 (mds at 58 % at 04:02:10).
+  The mds burst is likely Spotlight indexing `serving/omlx_0.7/.bench-home` (the oMLX SSD
+  cache) or the new `models/oq` files; suggest the user adds `~/Developer/mlsys/serving`
+  and `~/Developer/mlsys/models` to Spotlight's privacy list.
+- **oMLX with Lightning MTP on the oQ checkpoints** (stock oMLX 0.7.1rc1; the mlx-community
+  checkpoints carry no mtp.* tensors). M4 20-step total, median of 3 runs:
+
+  | | temperature 0 | temperature 1.0 |
+  | --- | --- | --- |
+  | oMLX oQ4 + MTP | 158 s | 164 s |
+  | oMLX oQ8 + MTP | 195 s | 200 s |
+  | llama.cpp Q4_K_M + MTP | 201 s | 218 s |
+  | llama.cpp Q8_0 + MTP | 209 s | 224 s |
+  | oMLX oQ4, MTP off | 215 s | 216 s |
+  | oMLX oQ8, MTP off | 272 s | 272 s |
+
+  - Decode speedup from MTP: oQ8 ×2.0–2.75 structured and ×1.5–1.6 thinking at temperature
+    0, ×2.4–2.9 and ×2.0 at 1.0; oQ4 ×2.2–2.5 and ×1.6–1.8 at 0, ×2.2–2.7 and ×1.7–2.0 at 1.0.
+  - With MTP off, oQ is about 4–5 % slower on M4 than the mlx-community checkpoints (oQ4 215
+    vs 206 s, oQ8 272 vs 258 s).
+  - M7: oQ4 24/24 (it passes `m7-07-enum`), oQ8 23/24, with MTP on or off.
+  - The gate with MTP on: G1–G5 pass on both; G2b fails, as on all stock oMLX. G5 64K TTFT
+    119.3 s (oQ8) and 105.3 s (oQ4), against 112.7 and 102.4 s with MTP off; the MTP head
+    adds about 3 GiB.
+  - M6, oQ4 + MTP, 30 min: 12 runs (11 complete) and 233 requests, against 9 runs and
+    187–188 requests for llama.cpp Q4 + MTP and oMLX MTP-off. e2e median 5.92 s, last/first
+    run 1.02, server tree 26 → peak 33 → end 22 GiB. Its 89 errors are all
+    `incomplete_tool_call` (the 150-token cap), the same 38 % share as oMLX MTP-off.
+  - The thinking-on TTFT stays about 2.6–3.3 s (the 2048-token prefix-cache boundary).
+  - **MTP is faster at temperature 1.0 than at 0 on oMLX** (thinking 28 → 35 tok/s on oQ8),
+    the opposite of llama.cpp. A black-box check on the raw outputs shows sampling is
+    applied: 0 of 25 temperature-1.0 cells repeat, and none matches the greedy output. The
+    agent-benchmark session's reading of `mlx_vlm/speculative/{common,mtp}.py`: draft and
+    target sample with coupled RNG streams (`_SpeculativeSamplerRNG`, enabled when
+    temperature > 0), and the walk outputs the target's own token, so it stays lossless while
+    acceptance rises. Still to verify in the code before it goes into a report.
+- **lithos-metal text-only re-runs** (all three variants, M1 and M4):
+  - lithos does have a prefix cache once all-text content is sent as strings: M1 warm TTFT
+    5.0 s with 14,908 tokens cached, against 40.3 s cold. The earlier "no prefix cache"
+    note came from the invalid runs; correct it in the summary.
+  - Its M4 counts the 150-token cap truncation ("The model generated an incomplete tool
+    call; increase the output budget", a stream error) as a plain error with no latency,
+    while oMLX's `incomplete_tool_call` counts as a latency sample. The dspark total of
+    320 s leaves out 8 of 21 steps. Fix the harness summarizer before publishing.
+- **Summary hygiene.** Before tonight, five summary sections cited quarantined files (lithos
+  `4bit-no-draft` and `nvfp4-dspark` M1/M4, llama.cpp `8bit-mtp-off` M3). All five were
+  re-run tonight. Regenerate every summary and check that no `Source:` points into
+  `_unverified/` before the PR.
+- **Still paused:** suggestd (43674) and mediaanalysisd (93568), state T since
+  2026-10-18 22:35:45. The user resumes them with `kill -CONT 43674 93568`.
+- **Next (after the meeting, when the user says continue):**
+  1. No GPU needed: verify the coupled-RNG code points; look into the oMLX thinking-prefix
+     cache boundary (`omlx/scheduler.py`: `prefill_step_size` 2048, `_prefill_tail_plan`,
+     `_detect_needs_think_prefix`); the lithos summarizer fix; the summary hygiene check.
+  2. A PR for the Q8_0 rows, the temperature-1.0 rows, the oMLX 8-bit M3, the oQ/MTP rows
+     (with the MTP gate and M6), and the mlx-lm and lithos re-runs. No attribution lines.
+  3. Then the older list below: Core AI, MLC-LLM, the A/B comparison, M8, the final summary
+     PR and the Chinese summary, and the disk cleanup. The oQ checkpoints (44 GB in
+     `models/oq`) stay while the agent-benchmark session may adopt oMLX + MTP.
+
+## State at 2026-10-19 15:10: paused by the user (laptop taken out)
 
 - **Stopped at 15:07** on the user's request. The `q4-on-t1` step was cut mid-M3, and its
   partial M3 and monitor TSV are in `llama.cpp/raw/_unverified/`. The lock was released at
