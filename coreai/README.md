@@ -6,4 +6,4 @@
 - `raw/`: one JSONL file per run, whose header holds the commands, the provenance and the
   quiet pre-flight, plus the monitor TSV of the block.
 
-Results land through the `bench/coreai` pull request (a direct-call reference row).
+Results landed through pull request #8 (a direct-call reference row; the `llm-server` gate follows).

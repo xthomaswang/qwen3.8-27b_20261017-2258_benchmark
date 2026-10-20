@@ -1,9 +1,61 @@
 # Resume — current progress
 
-Updated: 2026-10-20 09:30 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-20 14:00 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-20 09:30): results PRs open, Core AI A/B under the lock
+## Current state (2026-10-20 14:00): PRs #5–#8 merged, MLC gate in PR #9, night chain next
+
+- **M6 for oMLX oQ8 + Lightning MTP: verified on the third attempt (12:30–13:02).**
+  - 190 requests in 30 min (10 runs, 9 complete), against 188 for the 4-bit row and 233 for
+    oQ4 with MTP.
+  - e2e median 7.30 s; last run over first 1.01; server tree 46 → 47 → 42 GiB.
+  - 67 `incomplete_tool_call` at the 150-token cap (35 %).
+  - Attempts 1 and 2 were disturbed, at 11:38 by `ReportMemoryException` at 99 % and at
+    12:13 by `mds` at 56 %. Both are in `raw/_unverified/`.
+  - The result went into PR #7 (`1679e31`) before the merge.
+- **MLC-LLM gate, 13:05–13:21, verified. PR #9 is open; the text-only suites will be added
+  to it.**
+  - G1 passes only through structured output; G2–G4 fail.
+  - G5 passes, but at 64K the TTFT is 815 s (78.5 tok/s). G1's 12,849 tokens took 102 s.
+  - The image 500s are `ModuleNotFoundError: PIL` in the MLC venv; the artifact is text-only
+    anyway.
+- **The user added `experiments`, `ml_source` and `mlsys` to Spotlight's privacy list**
+  (about 13:04).
+- **The GPU work had to end by 13:30 (the user).** The lock was released at 13:21:39. The
+  Core AI `llm-server` gate moved to the night chain.
+- **PRs #5–#8 were merged (about 13:50, authorized by the user) after a review.**
+  - No secrets or home paths, and no attribution lines.
+  - `redact.py --check` was clean, and each PR test-merged cleanly.
+  - The working tree was then synced with the merge-trap procedure below and is clean,
+    except for PR #9's `mlc-llm/` files.
+- **README:**
+  - each test ID (gate, metrics, M8 scenarios) with the real-world situation it stands for,
+    as the user asked;
+  - tiers and tag parts;
+  - the status table brought up to date.
+- **Night chain from 23:00 (planned; the user picks the MLC scope; the default is trimmed):**
+  1. Core AI `llm-server` gate;
+  2. a short M8 mechanics pass;
+  3. M8: four frameworks × six scenarios, power excluded;
+  4. MLC text-only, trimmed: M1 (2 + 2 trials), M2 at 16K / 32K, M3 at 16K / 32K with cap 150
+     and `--no-thinking-bucket`, and M7.
+
+  The full MLC set would take about 9 h, because every request is a cold prefill (126 tok/s
+  at 13K, 78 tok/s at 64K). M4 alone would take about 2 h per run.
+- **Prep before 23:00:**
+  - a runner for the Core AI `llm-server` step;
+  - `M8_DRY_RUN=1`;
+  - the `mem` margin for oMLX oQ8 (system used peaked at 72.5 GiB in M6, so use `--gb 32`);
+  - a night script with acquire retries and a cleanup trap.
+- **Waiting on the user:**
+  - suggestd and mediaanalysisd paused;
+  - M8's open questions: `cpuhalf` with 8 or 9 threads, GPU duty 0.5, about 85 GB written
+    per disk block;
+  - the power scenario (sudo);
+  - the MLC scope;
+  - localmelo_main's CPU-only B2 workflow request.
+
+## Previous state (2026-10-20 09:30): results PRs open, Core AI A/B under the lock
 
 - **The user said to continue at 08:48.**
 - **PRs, open and not merged yet:**

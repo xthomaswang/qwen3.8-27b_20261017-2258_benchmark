@@ -6,4 +6,4 @@
 - `raw/`: one JSONL file per suite run, whose header holds the server flags and the machine
   state, plus the monitor TSVs.
 
-Results land through the `bench/mlx-lm` pull request (a text-only reference row).
+Results landed through pull request #5 (a text-only reference row).

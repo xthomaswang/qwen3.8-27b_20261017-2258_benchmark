@@ -7,4 +7,4 @@
 - `raw/`: one JSONL file per suite run, whose header holds the server flags and the machine
   state, plus the monitor TSVs.
 
-Results land through the `bench/lithos-metal` pull request (a text-only reference row).
+Results landed through pull request #6 (a text-only reference row).
