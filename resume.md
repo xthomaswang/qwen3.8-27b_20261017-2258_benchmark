@@ -51,9 +51,11 @@ when resuming.
   - M6, oQ4 + MTP, 30 min: 12 runs (11 complete) and 233 requests, against 9 runs and
     187–188 requests for llama.cpp Q4 + MTP and oMLX MTP-off. e2e median 5.92 s, last/first
     run 1.02, server tree 26 → peak 33 → end 22 GiB. Its 89 errors are all
-    `incomplete_tool_call` (the 150-token cap), the same 38 % share as oMLX MTP-off. Do not
-    compare its −4 GiB tree growth with llama.cpp's +7 GiB: llama.cpp's footprint grows as its
-    mmap'd weights page in (the reason the README uses system GPU memory), not from a leak.
+    `incomplete_tool_call` (the 150-token cap), the same 38 % share as oMLX MTP-off. llama.cpp's
+    +7 GiB is its prompt cache filling up to the `--cache-ram 8192` cap: the footprint climbs
+    11 → 17 → 24 GiB in the first runs and then stays at 24–25 GiB, so it is not a leak. (A
+    note written at 07:10 blamed mmap page-in; `footprint` does not count clean mmap'd file
+    pages, so that was wrong.)
   - The thinking-on TTFT stays about 2.6–3.3 s (the 2048-token prefix-cache boundary).
   - **MTP is faster at temperature 1.0 than at 0 on oMLX** (thinking 28 → 35 tok/s on oQ8),
     the opposite of llama.cpp. A black-box check on the raw outputs shows sampling is
