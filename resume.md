@@ -33,20 +33,34 @@ when resuming.
     as the user asked;
   - tiers and tag parts;
   - the status table brought up to date.
-- **Night chain from 23:00 (planned; the user picks the MLC scope; the default is trimmed):**
-  1. Core AI `llm-server` gate;
-  2. a short M8 mechanics pass;
-  3. M8: four frameworks × six scenarios, power excluded;
-  4. MLC text-only, trimmed: M1 (2 + 2 trials), M2 at 16K / 32K, M3 at 16K / 32K with cap 150
-     and `--no-thinking-bucket`, and M7.
-
-  The full MLC set would take about 9 h, because every request is a cold prefill (126 tok/s
-  at 13K, 78 tok/s at 64K). M4 alone would take about 2 h per run.
-- **Prep before 23:00:**
-  - a runner for the Core AI `llm-server` step;
-  - `M8_DRY_RUN=1`;
-  - the `mem` margin for oMLX oQ8 (system used peaked at 72.5 GiB in M6, so use `--gb 32`);
-  - a night script with acquire retries and a cleanup trap.
+- **Night chain: launched at 18:12, detached, waiting for 23:00.**
+  - PID 25058 in its own session; the script is `logs/night-20261020.sh` and the log
+    `logs/night-20261020.log` (both local).
+  - Steps:
+    1. `coreai`: the Core AI `llm-server` gate (`run_tier2.sh coreai-gate`, port 8706,
+       commit `93a5bbb`);
+    2. `mech`: an M8 mechanics pass (`RUN_UNVERIFIED=1`, llama.cpp, one `cpu1` block, M1
+       only). If it fails, the M8 steps are skipped;
+    3. `m8-llama`, `m8-omlx` (oQ8 + MTP), `m8-lithos` (4bit-dspark) and `m8-vllm`: six
+       scenarios each, with power left out (it needs sudo). `mem` is 32 GB on every
+       framework, because oMLX oQ8's M6 system-used peak was 72.5 GiB;
+    4. `mlc`: `mlc-text-trim` (M1 2 + 2, M2 at 16K / 32K, M3 at 16K / 32K with cap 150 and no
+       thinking bucket, and M7), about 2 h. Writing `mlc-text` into `logs/night-mlc-step`
+       before that step starts switches to the full set (about 9 h: every request is a cold
+       prefill).
+  - The lock is acquired with ETA 750 min. A busy lock is retried every 2 min for up to
+    45 min, and a listening port 8500 is waited out for up to 30 min.
+  - On exit, a trap stops any load and server of ours and releases the lock.
+  - Stop the whole chain with `kill -TERM -25058` (the process group).
+  - Restart from a step with `bash logs/night-20261020.sh <step>`; `START_AT=now` skips the
+    wait.
+  - Expected end: about 10:00–12:00 on 2026-10-21.
+- **Checks done before the launch:**
+  - `serve.sh coreai server 4bit --dry-run` passed;
+  - `M8_DRY_RUN=1` plans passed for all four frameworks;
+  - a dry rehearsal of the chain passed;
+  - the harness tests passed (120).
+  - The peers were told at 14:00. A reminder is due at 22:45.
 - **Waiting on the user:**
   - suggestd and mediaanalysisd paused;
   - M8's open questions: `cpuhalf` with 8 or 9 threads, GPU duty 0.5, about 85 GB written
