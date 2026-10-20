@@ -3,7 +3,7 @@
 
 Stdlib only; run with /usr/bin/python3 -I. Subcommands:
 
-  check   [--allow-pid PID]... [--settle S] [--max-gpu-gb G]
+  check   [--allow-pid PID]... [--settle S] [--max-gpu-gb G] [--allow NAME[,NAME]]
           One-shot pre-flight, run while the server under test is idle. Prints a provenance
           block; exit 1 when the machine is not quiet. With --settle, soft failures (load, GPU
           busy, busy processes, build tools, thermal) are re-checked every 5 s for up to S
@@ -11,7 +11,7 @@ Stdlib only; run with /usr/bin/python3 -I. Subcommands:
           before a server starts) also fails while more than G GB of GPU memory is in use,
           i.e. while another model is resident. --min-battery fails while the battery is below
           PCT %.
-  monitor --log FILE [--interval S] [--allow-pid PID]... [--until-pid PID]
+  monitor --log FILE [--interval S] [--allow-pid PID]... [--until-pid PID] [--allow NAME[,NAME]]
           Samples while a segment runs. Every sample is a TSV row in FILE; stdout gets one line
           per state change. Lock, port 8500, power, thermal and build tools mark a sample
           DISTURBED at once. CPU counts only when it persists: the same foreign process above
@@ -30,10 +30,21 @@ Stdlib only; run with /usr/bin/python3 -I. Subcommands:
           looks for disturbed samples, or gaps in sampling, inside the file's window: after its
           header `created` and up to one interval past its mtime.
           --move sends those files, and their .md siblings, to DIR/_unverified/.
-          Exit 1 if any file was disturbed.
+          Exit 1 if any file was disturbed. Allowances in the log's header are printed.
 
 --allow-pid PID exempts PID and all its descendants (the server under test, its engine
-workers, the harness) from the per-process checks.
+workers, the harness, an M8 interference load) from the per-process checks.
+
+--allow NAME (M8, METHODOLOGY.md section 4) accepts one system-wide side effect of an
+interference load that our own script started; anything else is judged as before:
+  load      the 1-min load average is not judged (check; the monitor never judges it)
+  gpu       GPU utilization is not judged (check; the monitor never judges it)
+  thermal   a pmset thermal warning is recorded as "allowed thermal: ..." instead of failing
+  lowpower  Low Power Mode on AC power is recorded as "allowed power: ..."; battery power, or
+            any other mode than High Power or Low Power, still fails
+The allowances are printed by check (so the raw header's preflight block holds them) and
+written to the monitor log's header (allowances=...). Allowed reasons start with "allowed ",
+so verify, which judges the logged reasons, never counts them.
 
 Processes inside an app bundle whose identifier is not com.apple.* are shown as `<app>`, so
 the user's own apps never reach committed files (scripts/redact.py applies the same rule to
@@ -78,6 +89,16 @@ BUILD_ARGS = re.compile(r"mlc_llm (convert_weight|compile)|coreai\.llm\.export|\
                         r"huggingface-cli download|hf_transfer|snapshot_download|"
                         r"\bbrew (install|upgrade|reinstall)\b|\buv (sync|pip install)\b|\bpip3? install\b")
 SETTLE_STEP = 5.0
+ALLOWANCES = ("load", "gpu", "thermal", "lowpower")  # see --allow in the module docstring
+
+
+def allow_names(text: str) -> list[str]:
+    """argparse type for --allow: comma-separated names from ALLOWANCES (empty is allowed)."""
+    names = [x.strip() for x in text.split(",") if x.strip()]
+    bad = [x for x in names if x not in ALLOWANCES]
+    if bad:
+        raise argparse.ArgumentTypeError(f"unknown allowance {', '.join(bad)} (known: {', '.join(ALLOWANCES)})")
+    return names
 
 
 def run(cmd: list[str], timeout: float = 20.0) -> tuple[int, str]:
@@ -161,15 +182,37 @@ def gpu() -> tuple[int, float]:
     return (int(util.group(1)) if util else -1, round(int(mem.group(1)) / 1e9, 1) if mem else -1.0)
 
 
-def power() -> tuple[bool, str]:
+def power_state() -> dict:
+    """{"source", "powermode", "lowpowermode"} from pmset; the modes are None when pmset has no
+    such line. This machine shows `powermode` (0 automatic, 1 low, 2 high); Macs without High
+    Power Mode show `lowpowermode` instead."""
     _, batt = run(["pmset", "-g", "batt"])
     _, conf = run(["pmset", "-g"])
     src = re.search(r"drawing from '([^']+)'", batt)
     mode = re.search(r"^\s*powermode\s+(\d+)", conf, re.M)
-    src_s = src.group(1) if src else "unknown"
-    mode_s = mode.group(1) if mode else "?"
-    ok = src_s == "AC Power" and mode_s in ("2", "?")
-    return ok, f"{src_s}; powermode {mode_s}" + (" (High Power)" if mode_s == "2" else "")
+    low = re.search(r"^\s*lowpowermode\s+(\d+)", conf, re.M)
+    return {"source": src.group(1) if src else "unknown", "powermode": mode.group(1) if mode else None,
+            "lowpowermode": low.group(1) if low else None}
+
+
+def low_power(st: dict) -> bool:
+    return st["powermode"] == "1" or st["lowpowermode"] == "1"
+
+
+def power_text(st: dict) -> str:
+    mode = st["powermode"] or "?"
+    return (f"{st['source']}; powermode {mode}" + {"2": " (High Power)", "1": " (Low Power)"}.get(mode, "")
+            + ("; lowpowermode 1" if st["lowpowermode"] == "1" else ""))
+
+
+def power_ok(st: dict) -> bool:
+    """On AC power in High Power mode. Low Power Mode fails under either name."""
+    return st["source"] == "AC Power" and (st["powermode"] or "?") in ("2", "?") and st["lowpowermode"] != "1"
+
+
+def power() -> tuple[bool, str]:
+    st = power_state()
+    return power_ok(st), power_text(st)
 
 
 def battery() -> tuple[int, str]:
@@ -215,13 +258,14 @@ def sample(allow: list[int]) -> dict:
         load1 = float(la.strip("{} \n").split()[0])
     except (ValueError, IndexError):
         load1 = -1.0
-    pwr_ok, pwr = power()
+    pst = power_state()
     g_util, g_mem = gpu()
     batt, batt_state = battery()
     return {"t": time.time(), "lock": lock_purpose(), "peer_port": peer_port_up(), "load1": load1,
             "gpu_util": g_util, "gpu_mem_gb": g_mem,
             "foreign_cpu": round(sum(p[1] for p in foreign), 1), "busy": busy, "top": top, "tools": tools,
-            "thermal": thermal_warnings(), "power_ok": pwr_ok, "power": pwr,
+            "thermal": thermal_warnings(), "power_ok": power_ok(pst), "power": power_text(pst),
+            "low_power_ac": pst["source"] == "AC Power" and low_power(pst),
             "battery": batt, "battery_state": batt_state, "tpl": thermal_pressure()}
 
 
@@ -249,25 +293,32 @@ def shown(comm: str) -> str:
     return "<app>" if third_party_app(comm) else tidy(comm)
 
 
-def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None,
-             min_battery: float | None = None) -> tuple[list[str], list[str]]:
-    """(hard, soft) failure reasons for a sample. Hard: lock, port, power, a battery below the
-    run limit. Soft: the rest, including a battery below min_battery (check only)."""
-    hard, soft = [], []
+def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None, min_battery: float | None = None,
+             allow: frozenset = frozenset()) -> tuple[list[str], list[str], list[str]]:
+    """(hard, soft, allowed) reasons for a sample. Hard: lock, port, power, a battery below the
+    run limit. Soft: the rest, including a battery below min_battery (check only). Allowed: what
+    an --allow name accepts, recorded as "allowed <reason>" so that it stays visible but never
+    counts (verify matches reasons by their start)."""
+    hard, soft, allowed = [], [], []
     if s["lock"] is None:
         hard.append("lock not held by us")
     if s["peer_port"]:
         hard.append(f"port {PEER_PORT} listening")
     if not s["power_ok"]:
-        hard.append(f"power: {s['power']}")
+        if "lowpower" in allow and s.get("low_power_ac"):
+            allowed.append(f"allowed power: {s['power']}")
+        else:
+            hard.append(f"power: {s['power']}")
     if 0 <= s["battery"] < MIN_BATTERY_RUN:
         hard.append(f"battery: {s['battery']}% < {MIN_BATTERY_RUN:.0f}%")
     elif min_battery is not None and 0 <= s["battery"] < min_battery:
         soft.append(f"battery {s['battery']}% < {min_battery:.0f}% (charging)")
     if judge_load and s["load1"] > MAX_LOAD:
-        soft.append(f"load1 {s['load1']:.2f} > {MAX_LOAD}")
+        (allowed if "load" in allow else soft).append(
+            ("allowed " if "load" in allow else "") + f"load1 {s['load1']:.2f} > {MAX_LOAD}")
     if judge_load and s["gpu_util"] > MAX_GPU:   # judge_load: our server is idle, so the GPU should be too
-        soft.append(f"GPU busy {s['gpu_util']}% > {MAX_GPU:.0f}%")
+        (allowed if "gpu" in allow else soft).append(
+            ("allowed " if "gpu" in allow else "") + f"GPU busy {s['gpu_util']}% > {MAX_GPU:.0f}%")
     if max_gpu_gb is not None and s["gpu_mem_gb"] > max_gpu_gb:
         soft.append(f"GPU memory in use {s['gpu_mem_gb']} GB > {max_gpu_gb} GB (another model resident?)")
     if s["busy"]:
@@ -277,17 +328,22 @@ def problems(s: dict, judge_load: bool, max_gpu_gb: float | None = None,
     if s["tools"]:
         soft.append("tools: " + "; ".join(t.split(None, 1)[1][:60] for t in s["tools"]))
     if s["thermal"]:
-        soft.append("thermal: " + "; ".join(s["thermal"]))
-    return hard, soft
+        (allowed if "thermal" in allow else soft).append(
+            ("allowed " if "thermal" in allow else "") + "thermal: " + "; ".join(s["thermal"]))
+    return hard, soft, allowed
 
 
-def report(s: dict, settle_note: str | None, verdict: bool) -> str:
+def report(s: dict, settle_note: str | None, verdict: bool, allow: frozenset = frozenset()) -> str:
     stamp = dt.datetime.fromtimestamp(s["t"]).astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
+
+    def tag(name: str) -> str:
+        return f" [allowance {name}]" if name in allow else ""
+
     lines = [f"quiet_check: {stamp}",
              f"lock: held by us ({s['lock']})" if s["lock"] is not None else "lock: NOT held by us",
              f"port {PEER_PORT}: LISTENING (agent-benchmark oMLX is up)" if s["peer_port"] else f"port {PEER_PORT}: free",
-             f"load1: {s['load1']:.2f} (max {MAX_LOAD})",
-             f"gpu: {s['gpu_util']}% busy (max {MAX_GPU:.0f}), {s['gpu_mem_gb']} GB in use",
+             f"load1: {s['load1']:.2f} (max {MAX_LOAD}){tag('load')}",
+             f"gpu: {s['gpu_util']}% busy (max {MAX_GPU:.0f}){tag('gpu')}, {s['gpu_mem_gb']} GB in use",
              f"foreign CPU: {s['foreign_cpu']:.1f}% total (max {MAX_FOREIGN_CPU:.0f}); top: "
              + ", ".join(f"{name(c)} {cpu:.1f}" for _, cpu, c in s["top"])]
     if s["busy"]:
@@ -300,10 +356,14 @@ def report(s: dict, settle_note: str | None, verdict: bool) -> str:
         lines += [f"  {t}" for t in s["tools"]]
     else:
         lines.append("build/convert/download tools: none")
-    lines.append("thermal: " + ("; ".join(s["thermal"]) if s["thermal"] else "no warning recorded"))
-    lines.append(f"power: {s['power']}")
+    lines.append("thermal: " + ("; ".join(s["thermal"]) if s["thermal"] else "no warning recorded")
+                 + (tag("thermal") if s["thermal"] else ""))
+    lines.append(f"power: {s['power']}" + (tag("lowpower") if not s["power_ok"] and s.get("low_power_ac") else ""))
     lines.append("battery: " + (f"{s['battery']}% ({s['battery_state']})" if s["battery"] >= 0 else "none"))
     lines.append(f"thermal pressure: {tpl_text(s['tpl'])}")
+    if allow:
+        lines.append(f"allowances: {', '.join(sorted(allow))} (an M8 interference load's own side effects; "
+                     "foreign processes are judged as always)")
     if settle_note:
         lines.append(settle_note)
     lines.append("verdict: QUIET" if verdict else "verdict: NOT QUIET")
@@ -311,10 +371,11 @@ def report(s: dict, settle_note: str | None, verdict: bool) -> str:
 
 
 def cmd_check(a: argparse.Namespace) -> int:
+    allow = frozenset(n for names in a.allow for n in names)
     t0 = time.time()
     while True:
         s = sample(a.allow_pid)
-        hard, soft = problems(s, judge_load=True, max_gpu_gb=a.max_gpu_gb, min_battery=a.min_battery)
+        hard, soft, _ = problems(s, judge_load=True, max_gpu_gb=a.max_gpu_gb, min_battery=a.min_battery, allow=allow)
         waited = time.time() - t0
         if hard or not soft or waited + SETTLE_STEP > a.settle:
             break
@@ -328,17 +389,19 @@ def cmd_check(a: argparse.Namespace) -> int:
             note = f"settle: not attempted (hard failure: {'; '.join(hard)})"
         else:
             note = f"settle: still not quiet after {waited:.0f} s (limit {a.settle:.0f} s): {'; '.join(soft)}"
-    print(report(s, note, ok))
+    print(report(s, note, ok, allow))
     return 0 if ok else 1
 
 
 def cmd_monitor(a: argparse.Namespace) -> int:
+    allow = frozenset(n for names in a.allow for n in names)
     log = Path(a.log)
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a", encoding="utf-8") as f:
         f.write(f"# quietlib monitor v3 interval={a.interval} max_proc_cpu={MAX_PROC_CPU} "
                 f"max_foreign_cpu={MAX_FOREIGN_CPU} min_battery_run={MIN_BATTERY_RUN} "
-                f"allow={','.join(map(str, a.allow_pid))}\n")
+                f"allow={','.join(map(str, a.allow_pid))}"
+                + (f" allowances={','.join(sorted(allow))}" if allow else "") + "\n")
         f.write("# iso\tepoch\tstate\tload1\tforeign_cpu\tgpu_util\tgpu_mem_gb\tbattery\tthermal_pressure\treasons\n")
         f.flush()
         state, prev_pids, prev_over = None, set(), False
@@ -346,11 +409,11 @@ def cmd_monitor(a: argparse.Namespace) -> int:
             if a.until_pid and not pid_alive(a.until_pid):
                 break
             s = sample(a.allow_pid)
-            hard, soft = problems(s, judge_load=False)
-            reasons = hard + soft
+            hard, soft, allowed = problems(s, judge_load=False, allow=allow)
+            reasons = hard + soft + allowed
             pids = {p[0] for p in s["busy"]}
             over = s["foreign_cpu"] > MAX_FOREIGN_CPU
-            instant = bool(hard or s["tools"] or s["thermal"])
+            instant = bool(hard) or any(r.startswith(("tools:", "thermal:")) for r in soft)
             new = "DISTURBED" if instant or (pids & prev_pids) or (over and prev_over) \
                 else ("SPIKE" if (pids or over) else "QUIET")
             prev_pids, prev_over = pids, over
@@ -373,13 +436,18 @@ def pid_alive(pid: int) -> bool:
         return False
 
 
-def read_log(path: Path) -> tuple[float, list[tuple[float, str, str]]]:
-    interval, rows = 10.0, []
+def read_log(path: Path) -> tuple[float, list[tuple[float, str, str]], str]:
+    """(interval, rows, allowances): rows are (epoch, state, reasons); allowances is the header's
+    comma-separated --allow list ("" without one)."""
+    interval, rows, allowances = 10.0, [], ""
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("#"):
             m = re.search(r"interval=([\d.]+)", line)
             if m:
                 interval = float(m.group(1))
+            m = re.search(r"allowances=(\S+)", line)
+            if m:
+                allowances = m.group(1)
             continue
         parts = line.split("\t")
         if len(parts) >= 3:
@@ -387,7 +455,7 @@ def read_log(path: Path) -> tuple[float, list[tuple[float, str, str]]]:
                 rows.append((float(parts[1]), parts[2], parts[-1] if len(parts) > 5 else ""))
             except ValueError:
                 continue
-    return interval, rows
+    return interval, rows, allowances
 
 
 _BUSY = re.compile(r"([^\s,;]+)\((\d+)\) [\d.]+%")
@@ -410,8 +478,9 @@ def judge(rows: list[tuple[float, str, str]]) -> list[tuple[float, bool, str]]:
 
 
 def cmd_verify(a: argparse.Namespace) -> int:
-    interval, rows = read_log(Path(a.log))
+    interval, rows, allowances = read_log(Path(a.log))
     judged = judge(rows)
+    note = f"; allowances {allowances}" if allowances else ""
     raw = Path(a.raw_dir)
     bad = 0
     for f in sorted(raw.glob("*.jsonl")):
@@ -434,10 +503,10 @@ def cmd_verify(a: argparse.Namespace) -> int:
         elif gap > 3 * interval:
             why = f"monitor gap of {gap:.0f} s (interval {interval:.0f} s)"
         if why is None:
-            print(f"verify: {f.name}: quiet ({len(inside)} samples, {end - start:.0f} s)")
+            print(f"verify: {f.name}: quiet ({len(inside)} samples, {end - start:.0f} s{note})")
             continue
         bad += 1
-        print(f"verify: {f.name}: DISTURBED, {why}")
+        print(f"verify: {f.name}: DISTURBED, {why}{note}")
         if a.move:
             dest = raw / "_unverified"
             dest.mkdir(exist_ok=True)
@@ -473,11 +542,13 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--settle", type=float, default=0.0)
     c.add_argument("--max-gpu-gb", type=float)
     c.add_argument("--min-battery", type=float)
+    c.add_argument("--allow", type=allow_names, action="append", default=[], help="M8 allowances: " + ", ".join(ALLOWANCES))
     m = sub.add_parser("monitor")
     m.add_argument("--log", required=True)
     m.add_argument("--interval", type=float, default=10.0)
     m.add_argument("--allow-pid", type=int, action="append", default=[])
     m.add_argument("--until-pid", type=int)
+    m.add_argument("--allow", type=allow_names, action="append", default=[], help="M8 allowances: " + ", ".join(ALLOWANCES))
     v = sub.add_parser("verify")
     v.add_argument("--log", required=True)
     v.add_argument("--raw-dir", required=True)

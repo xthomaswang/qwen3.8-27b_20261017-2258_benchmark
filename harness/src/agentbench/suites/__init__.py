@@ -41,7 +41,8 @@ async def run_suite(cfg: RunConfig, opts: SuiteOpts, name: str, fx: Fixtures | N
         await target.aclose()
 
 
-async def run_all(cfg: RunConfig, opts: SuiteOpts, suites: list[str], auto_text_only: bool = True) -> dict[str, Any]:
+async def run_all(cfg: RunConfig, opts: SuiteOpts, suites: list[str], auto_text_only: bool = True,
+                  write_summary: bool = True) -> dict[str, Any]:
     from ..summarize import summarize
 
     if "m3" in suites and opts.spec_label is None:
@@ -79,6 +80,7 @@ async def run_all(cfg: RunConfig, opts: SuiteOpts, suites: list[str], auto_text_
     verified = [f for f in files if "_unverified" not in f.parts]
     if len(verified) < len(files):
         eprint(f"{len(files) - len(verified)} result file(s) are in raw/_unverified/ and are left out of summary.md")
-    md = summarize(cfg.fw_dir, cfg.tag, files=verified, write=bool(verified)) if verified else "_no verified results_\n"
+    md = (summarize(cfg.fw_dir, cfg.tag, files=verified, write=write_summary and bool(verified))
+          if verified else "_no verified results_\n")
     print(md)
     return {"results": results, "files": [str(f) for f in files], "summary_md": str(cfg.fw_dir / "summary.md")}

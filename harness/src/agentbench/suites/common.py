@@ -54,6 +54,7 @@ class RunConfig:
     preflight_cmd: list[str] | None = None  # e.g. [<repo>/scripts/quiet_check.sh]; run before each suite
     unverified: bool = False  # write raw files to <framework>/raw/_unverified/ (gitignored, never published)
     preflight: dict[str, Any] | None = None  # result of the last preflight, recorded in the header
+    interference: dict[str, Any] | None = None  # M8 block record (scenario, parameters, allowances), in the header
 
     @property
     def fw_dir(self) -> Path:
@@ -86,6 +87,8 @@ class Writer:
         hdr = header(suite, cfg.tag, fw, server, safe_args)
         hdr["preflight"] = cfg.preflight
         hdr["unverified"] = cfg.unverified
+        if cfg.interference is not None:
+            hdr["interference"] = cfg.interference
         hdr["mode"] = {"quick": cfg.quick, "text_only": cfg.text_only, "text_only_reason": cfg.text_only_reason,
                        "thinking_fields": cfg.thinking_fields, "screenshot_placement": cfg.screenshot_placement,
                        "tool_call_mode": cfg.profile.tool_call_mode,

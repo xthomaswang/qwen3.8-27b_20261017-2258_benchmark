@@ -1,4 +1,4 @@
-"""agentbench CLI: fixtures, gate, m1-m7, run-all, summarize, mock-server, info, mem.
+"""agentbench CLI: fixtures, gate, m1-m7, run-all, summarize, m8-report, mock-server, info, mem.
 
 See harness/README.md for usage of every subcommand.
 """
@@ -56,6 +56,8 @@ def target_parser() -> argparse.ArgumentParser:
     g.add_argument("--preflight-cmd", help="quiet-check command to run instead of scripts/quiet_check.sh")
     g.add_argument("--unverified", action="store_true",
                    help="write results to <framework>/raw/_unverified/ (gitignored, never summarized)")
+    g.add_argument("--interference", help="M8: JSON object stored as the header's `interference` record "
+                   "(scenario, parameters, allowances, load PID, block; scripts/run_m8.sh)")
     g.add_argument("--out-root", type=Path, help="repo root that holds <framework>/raw (default: this repo)")
     g.add_argument("--fixtures", type=Path, help="fixtures directory (default: <repo>/fixtures)")
     return p
@@ -117,6 +119,13 @@ def make_config(a: argparse.Namespace):
         assert isinstance(extra, dict)
     except (ValueError, AssertionError):
         raise SystemExit("--extra-body must be a JSON object")
+    interference = None
+    if a.interference:
+        try:
+            interference = json.loads(a.interference)
+            assert isinstance(interference, dict)
+        except (ValueError, AssertionError):
+            raise SystemExit("--interference must be a JSON object")
     args = {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(a).items() if k not in ("func", "api_key")}
     preflight = None
     if a.preflight_cmd:
@@ -133,7 +142,7 @@ def make_config(a: argparse.Namespace):
                      api_key=a.api_key, extra_body=extra, thinking_fields=a.thinking_fields,
                      read_timeout=a.read_timeout, total_timeout=a.total_timeout,
                      screenshot_placement=a.screenshot_placement, context_config=a.context_config, args=args,
-                     preflight_cmd=preflight, unverified=a.unverified)
+                     preflight_cmd=preflight, unverified=a.unverified, interference=interference)
 
 
 def make_opts(a: argparse.Namespace):
@@ -176,7 +185,8 @@ def cmd_run_all(a: argparse.Namespace) -> int:
 
     cfg, opts = make_config(a), make_opts(a)
     try:
-        res = asyncio.run(run_all(cfg, opts, a.suites, auto_text_only=not a.no_auto_text_only))
+        res = asyncio.run(run_all(cfg, opts, a.suites, auto_text_only=not a.no_auto_text_only,
+                                  write_summary=not a.no_summary))
     except FixturesMissing as e:
         print(str(e), file=sys.stderr)
         return 2
@@ -257,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
     ra.add_argument("--suites", type=_strs, default=["gate", "m1", "m2", "m3", "m4", "m5", "m7"])
     ra.add_argument("--no-auto-text-only", action="store_true",
                     help="keep sending images after the gate's G2 failed")
+    ra.add_argument("--no-summary", action="store_true",
+                    help="print the tables but leave summary.md alone (M8 blocks; scripts/run_m8.sh)")
     sm = sub.add_parser("summarize", help="markdown tables from <framework>/raw/*.jsonl")
     sm.add_argument("--framework")
     sm.add_argument("--profile")
@@ -265,6 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     sm.add_argument("--all-runs", action="store_true", help="pool all files instead of the latest per suite and tag")
     sm.add_argument("--write", action="store_true", help="upsert the tables into <framework>/summary.md")
     sm.add_argument("--out-root", type=Path)
+    m8 = sub.add_parser("m8-report", help="M8 interference: slowdown per framework and scenario (markdown)")
+    m8.add_argument("--framework", action="append", help="framework directory (repeatable; default: every one with M8 files)")
+    m8.add_argument("--tag", help="the run_m8.sh tag, without -m8-<block>")
+    m8.add_argument("--details", action="store_true", help="add one row per scenario block and suite")
+    m8.add_argument("--unverified", action="store_true", help="read raw/_unverified/ instead (mechanics checks only)")
+    m8.add_argument("--out-root", type=Path)
     ms = sub.add_parser("mock-server", help="run the mock OpenAI/Anthropic SSE server")
     ms.add_argument("--port", type=int, default=8790)
     ms.add_argument("--behavior", choices=["generic", "llamacpp", "omlx", "vllm", "lithos", "mlxlm", "mlc"],
@@ -291,6 +309,13 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_run_all(a)
     if a.cmd == "summarize":
         return cmd_summarize(a)
+    if a.cmd == "m8-report":
+        from .m8report import report
+        from .provenance import repo_root
+
+        print(report(a.out_root or repo_root(), frameworks=a.framework, tag=a.tag, details=a.details,
+                     unverified=a.unverified))
+        return 0
     if a.cmd == "mock-server":
         return cmd_mock(a)
     if a.cmd == "mem":

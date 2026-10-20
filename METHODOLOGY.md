@@ -40,6 +40,7 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
 | M5 | Concurrency | TTFT of a main agent step while 1–2 auxiliary helper requests run at the same time, compared with the solo baseline. |
 | M6 | Memory and stability | Footprint at 64K context. A sustained trajectory loop runs 10–15 min per framework, and 30 min for finalists. Tracks latency drift, errors, and memory growth. |
 | M7 | Tool-call correctness | A suite of about 20 tool-call prompts, run with streaming. Success = expected call present, right name, schema-valid JSON arguments, no spurious call when none is needed, no markup leak. |
+| M8 | Interference | M1 warm TTFT, M3 decode at 16K and a one-run M4, under seven background loads (CPU, GPU, memory, disk, Low Power Mode), against clean baselines on the same server launch. Section 4. |
 
 ## 3. Protocol
 
@@ -195,3 +196,84 @@ G3 and G4 requests are shaped like the real harnesses, not idealized calls:
   with the Qwen3.8 tokenizer.
 - **Provenance.** Every raw record carries the framework version/commit, the server
   flags, the harness commit, the `sw_vers` build, and `xcodebuild -version`.
+
+## 4. M8: interference
+
+M8 measures how much each framework slows down when the machine is not quiet, under the kinds of
+load an agent backend shares a laptop with. Approved by the user on 2026-10-19. The clean-machine
+numbers of sections 2–3 are not used as baselines: every M8 run measures its own.
+
+- **Scenarios.** Each load is started and stopped by our own script, `scripts/interference.py`, as
+  one process tree with a single root PID. Busy threads are worker processes, since the GIL would
+  serialize Python threads. Every parameter can be changed (`M8_LOAD_ARGS_<scenario>`) and is
+  recorded.
+
+  | Scenario | Simulates | Load (defaults) | Allowances |
+  | --- | --- | --- | --- |
+  | `cpu1` | a background daemon such as suggestd | 1 busy thread | load |
+  | `cpuhalf` | another agent running pytest / mypy | 8 busy threads (of 18 logical CPUs: 6 Super + 12 Performance) | load, thermal |
+  | `cpuall` | a compile, worst case | 18 busy threads, one per logical CPU | load, thermal |
+  | `gpu` | video, a browser or another model | an MLX bf16 4096×4096 matmul loop (mlx-lm venv), busy 50 % of every 100 ms | gpu, load, thermal |
+  | `mem` | another large program | 40 GB allocated and filled with random bytes (the compressor cannot shrink them), every page re-read every 10 s so it stays resident; refused unless 8 GB more stays available | load |
+  | `disk` | a download or Spotlight indexing | 200 MB/s of writes and 1000 MB/s of reads on an 8 GiB file on the internal SSD, page cache bypassed (`F_NOCACHE`), in a `*.noindex` directory so Spotlight does not index it; deleted on stop | load |
+  | `power` | low battery / Low Power Mode | Low Power Mode, set by the user with sudo (below) | load, lowpower |
+- **Measurements.** Every block runs M1 warm TTFT (5 warm trials, no cold trials), M3 at 16K context
+  with cap 150 (thinking off, 5 trials) and M4 with one 20-step run. The settings are the same in
+  every block and on every framework.
+- **Order.** One server launch per framework variant runs `B S1 B S2 … S7 B`: every scenario block
+  sits between two clean baseline blocks of the same launch. Drift over the run (thermal state, the
+  growing prefix cache, the battery) shows up as a change between baselines, and comparing against
+  the mean of the two bracketing baselines cancels a linear drift. `power` comes last, so the user's
+  two sudo steps come once, at the end.
+- **Per block** (`scripts/run_m8.sh`):
+  1. With the server idle and no load: the battery wait (≥ 40 %), then the strict pre-flight of
+     section 3, unchanged and without allowances. The machine must be quiet before a load starts.
+  2. Scenario blocks: the load starts and reports ready, the block's monitor starts, and the load
+     settles for 60 s.
+  3. The suites, each as in section 3: quiet check, harness pre-flight (stored in the header),
+     monitor verdict, one repeat when disturbed.
+  4. The load stops, and a 60 s cool-down precedes the next block's pre-flight (which also waits
+     for the load average to fall after `cpuall`).
+
+  The battery is checked only at the block start, because a load drains it and cannot be paused
+  for charging; the monitor's 20 % limit still applies.
+- **The allowed-load rule.** The load's process tree is exempt by its root PID (`--allow-pid`), like
+  the server and the harness. Its system-wide side effects are accepted only by name, per scenario
+  (quietlib `--allow`):
+  - `load`: the 1-min load average is not judged in the pre-suite check (it counts the load's own
+    threads);
+  - `gpu`: GPU utilization is not judged in the pre-suite check;
+  - `thermal`: a `pmset -g therm` warning is logged as `allowed thermal: …` instead of disturbing
+    the suite;
+  - `lowpower`: Low Power Mode on AC power is logged as `allowed power: …`; battery power, or any
+    other mode, is still a disturbance.
+
+  Everything else is judged exactly as in section 3: any foreign process over the CPU limits, build
+  tools, the lock, port 8500, the battery. A suite during which the load stopped (for example, Low
+  Power Mode switched off early) moves to `raw/_unverified/`. The allowances are recorded three
+  times: in the check output (the raw header's `preflight`), in the monitor TSV header
+  (`allowances=`), and in the raw header's `interference` record, together with the scenario, its
+  effective parameters, the load's root PID, the block index and the run id.
+- **Raw files.** The tags are `<tag>-m8-base` and `<tag>-m8-<scenario>`, so M8 never replaces the
+  published rows of `<tag>`, and `run-all --no-summary` keeps the blocks out of `summary.md`.
+- **Slowdown.** `agentbench m8-report` compares each scenario block with the mean of the baseline
+  blocks on either side of it (same framework, tag, suite and launch). When one of them was not
+  verified, the nearest verified baseline on that side is used, or one side alone; the result is
+  then marked `*`. Slowdown is the extra time the same work takes under the scenario:
+  - M1: TTFT_S / TTFT_B − 1, from the warm-trial medians;
+  - M3: tps_B / tps_S − 1, i.e. time per token, from the decode-rate medians;
+  - M4: total_S / total_B − 1, from the run totals (a run with a failed step is not used).
+
+  A scenario measured in several blocks reports the median. The median change between consecutive
+  baselines is reported as the noise floor; an effect below it is not significant.
+- **Power.** No script runs sudo. The runner prints `sudo pmset -a lowpowermode 1` and waits (30 min
+  by default) until `pmset -g` shows Low Power Mode (`powermode 1`, or a `lowpowermode 1` line); if
+  nobody runs the command, the block is skipped. After the block it prints the restore command for
+  this machine, built from `pmset -g custom` taken before the change: here `sudo pmset -a
+  lowpowermode 0 && sudo pmset -b powermode 0 && sudo pmset -c powermode 2` (AC is in High Power,
+  battery in Automatic, and `lowpowermode 0` alone may leave AC in Automatic). It then waits for
+  High Power on AC before the next baseline, and ends the run without it. The quiet check treats a
+  `lowpowermode 1` line as "not High Power" as well.
+- **Cost.** A block takes about 6–7 min on a quiet machine (M4 alone 3.5–4 min); the 15 blocks, with
+  settles and cool-downs, take about 2–2.5 h per framework variant, plus the user's two sudo steps.
+  The disk scenario writes about 85 GB to the SSD per block (200 MB/s for ~7 min, settle included).

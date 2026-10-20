@@ -127,6 +127,7 @@ If G1 gets HTTP 400/404/422, the gate also sends the same request without `respo
 | `--structured-format`, `--structured-union` | `mlc` profile only, see above |
 | `--preflight` | METHODOLOGY's quiet-machine rule: run `scripts/quiet_check.sh --allow-pid <server> --allow-pid <harness>` before each suite and store its output in the header; if it fails, the results go to `<framework>/raw/_unverified/` (gitignored, left out of `summary.md`) with a warning (`--preflight-cmd` substitutes another command) |
 | `--unverified` | write results to `raw/_unverified/` regardless (exploratory runs) |
+| `--interference JSON` | M8: a JSON object stored as the header's `interference` record (scenario, parameters, allowances, load PID, block, run); `scripts/run_m8.sh` builds it with `interference.py meta` |
 | `--read-timeout`, `--total-timeout` | seconds (defaults 1800 / 3600; a 64K cold prefill can take minutes) |
 | `--out-root`, `--fixtures` | redirect outputs and fixtures (tests use temporary directories) |
 
@@ -262,8 +263,9 @@ arguments first (`m6` needs `--minutes`; without `--spec-label`, M3 rows are lab
 note is printed), keeps going when one suite fails, switches the remaining suites to
 `--text-only` when the server rejects G2's image with an HTTP error (an image that is accepted but
 misread is still measured with images; `--no-auto-text-only` keeps images regardless), and
-finally upserts `<framework>/summary.md` (section `summary <tag>`) and prints it. `--trials`
-applies to every suite in the run, M7 included.
+finally upserts `<framework>/summary.md` (section `summary <tag>`) and prints it (`--no-summary`
+only prints it: M8 blocks stay out of `summary.md`). `--trials` applies to every suite in the run,
+M7 included.
 
 ### `summarize`
 
@@ -276,6 +278,20 @@ size, M3 per (spec, thinking, context, cap) with decode rate, gaps and tokens pe
 step with cached share, M5 per helper count with the ratio to solo and 429 counts, M6 memory and
 drift, M7 per case with reasons. Uses the latest file per suite and tag unless `--all-runs`.
 `--write` upserts into `<framework>/summary.md`.
+
+### `m8-report`
+
+```bash
+uv run agentbench m8-report [--framework llama.cpp ...] [--tag 4bit-mtp-on] [--details] [--unverified]
+```
+
+M8 (METHODOLOGY.md, section 4): reads the `<suite>-<tag>-m8-<block>` raw files that
+`scripts/run_m8.sh` writes and prints one markdown table: per framework and tag, the baseline
+medians, the baseline drift (median change between consecutive baselines: the noise floor) and,
+per scenario, the slowdown in M1 warm TTFT, M3 decode (as time per token) and the M4 run total.
+Each scenario block is compared with the mean of the baseline blocks on either side of it on the
+same server launch (`*` when it is not bracketed by both). `--details` adds one row per block and
+suite; `--unverified` reads `raw/_unverified/` instead (mechanics checks).
 
 ### `mock-server`
 
