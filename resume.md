@@ -1,9 +1,79 @@
 # Resume — current progress
 
-Updated: 2026-10-20 07:10 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-20 09:30 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-20 07:10): night chain done, lock released
+## Current state (2026-10-20 09:30): results PRs open, Core AI A/B under the lock
+
+- **The user said to continue at 08:48.**
+- **PRs, open and not merged yet:**
+  - #5 mlx-lm (text-only reference row);
+  - #6 lithos-metal (text-only reference row);
+  - #7 Tier-3: oMLX with Lightning MTP on oQ, llama.cpp Q8_0 with MTP, the temperature-1.0
+    rows, and oMLX 8-bit M3.
+
+  Each framework's `summary.md` got its "Read first" notes, and the framework READMEs now
+  point at their result files. The PRs were built from temporary indexes, so the working
+  tree still holds their files as untracked or modified. After merging, do not
+  `git stash -u`. Instead run `git fetch origin && git checkout origin/main -- llama.cpp
+  omlx mlx-lm lithos-metal vllm-metal && git reset -q origin/main`, then check `git status`.
+- **llama.cpp's MTP acceptance at temperature 1.0, answered.**
+  - `--spec-draft-sampling` defaults to `greedy` (`common/common.h:337`; serve.sh does not
+    set it).
+  - So the drafter fills no `result_q`, and at temperature > 0 the server verifies by
+    sample-and-match (`common_sampler_sample_and_accept_n`).
+  - That is exact, but acceptance falls on high-entropy text. From the raw records'
+    `draft_n` and `draft_n_accepted`: M3 thinking 0.837 → 0.557 (Q8_0) and 0.698 → 0.540
+    (Q4_K_M); M4 0.77 → 0.61.
+  - The time per verify step stays flat (about 90 → 92 ms on Q8_0), so the slowdown is
+    acceptance only.
+  - `--spec-draft-sampling probabilistic` (rejection sampling, upstream PR #27694) is
+    untested here. The draft distribution would be top-10 plus temperature, not the
+    request's filters.
+  - Raw acceptance is not comparable across frameworks (different MTP heads, and oMLX's
+    adaptive depth); compare tokens per step or decode tok/s instead.
+  - Details are in `logs/findings/llamacpp_mtp_accept.md` (local).
+- **oMLX's ~3 s thinking-on TTFT, answered.** The trigger is an output crossing the next
+  2048-token block, not thinking.
+  - oMLX caches generated tokens too: `_output_tokens_cacheable`, and `preserve_thinking`
+    is set automatically for this template.
+  - When the output crosses a block boundary, the boundary store keeps the block-aligned
+    chain ("storing 16384/17000 tokens (block aligned)"). The prompt-end snapshot is never
+    stored (`omlx/scheduler.py` 8958–8982 and 9029 at `7a5a3d7`).
+  - The next identical prompt then restores `floor(prompt / 2048) × 2048` tokens. That held
+    in 132 of 132 cases across all logs.
+  - In M3 every thinking cell crosses (caps 1000 and 2000; the prompts sit 384 and 768
+    tokens below a boundary). Thinking-off cells never cross.
+  - No setting shrinks the 2048 block for this hybrid model. `cache_reasoning_output: false`
+    in the model's settings should restore prompt-end reuse, at the cost of never caching
+    thinking output for the next turn; that is read from the code and not run.
+  - A draft fix stores the prompt-end tail as well (`logs/findings/omlx_prompt_tail_dual_store.diff`,
+    +120 lines, untested). It would go in a separate worktree, never in `serving/omlx_0.7`.
+  - Upstream jundot/omlx main still has the same code, and no issue describes this (the
+    nearest are #3430 and #4353).
+  - Details are in `logs/findings/omlx_prefix_2048.md` (local).
+- **Correction:** llama.cpp's M6 growth (+7 GiB) is its prompt cache reaching the
+  `--cache-ram 8192` cap, not mmap page-in (commit `26bcc7d`; the peer was told).
+- **Core AI.** The 27B export already exists (2026-10-18 01:31, exit 0, peak footprint
+  37.7 GB; `models/coreai/qwen3_8_27b_qwen3_5_cfg_dynamic`, 16 GB).
+  - Its two `llm-benchmark` runs from that night are quarantined: load 4.0, and they ran
+    under the export lock.
+  - `scripts/coreai_ab.py` runs the direct-call A/B: `llm-benchmark` against
+    `mlx_lm.benchmark` at 4-bit, prompts of 512 and 16384 tokens, generation 1024, 5 trials,
+    order A B A B, 60 s idle between runs. Each run gets a quiet pre-flight, the monitor
+    and verify.
+  - The specialization cache from 10-18 (16 GB) is in place, so `cache_hit` is true and the
+    first-load specialization time is not measured.
+  - The lock was taken at 09:12, ahead of the 09:20 notice; both peers had confirmed they
+    were idle. The `llm-server` checks wait for a later slot.
+- **Waiting on the user:**
+  - suggestd and mediaanalysisd are still paused (the user's own `kill -STOP`);
+  - the Spotlight privacy list for `serving` and `models`;
+  - localmelo_main asked whether "continue" covers it. It was told no, and asked to wait
+    for the user. It wants to run a CPU-only B2 workflow of 30–40 min after the lock is
+    released.
+
+## Previous state (2026-10-20 07:10): night chain done, lock released
 
 - **The night chain, 23:13:50–06:56:43** (`logs/tier3-20261019-231351.log`, macOS 27.2
   26B5101f, Xcode 27.1 27A9275). Every step returned rc 0 and every suite verified. The lock
