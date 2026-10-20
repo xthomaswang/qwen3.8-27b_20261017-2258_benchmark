@@ -7,6 +7,10 @@ stays Xcode 27.1 (build 27A9275) and `xcode-select` was never changed.
 Only the tiny `Qwen/Qwen3.5-0.8B` was exported and loaded, as a toolchain check. Nothing
 27B has been exported or loaded. Its numbers in section 3 are **not benchmark results**.
 
+> **Update, 2026-10-20.** The 27B export ran after this file was written (2026-10-18
+> 01:05–01:31, exit 0, peak footprint 37.7 GB). The direct-call A/B against
+> `mlx_lm.benchmark` is in `summary.md`. The `llm-server` gate probes have not run yet.
+
 > **Premise correction.** The README lists Core AI as "reference only — no HTTP server".
 > That is out of date. `apple/coreai-models` has shipped `llm-server`, an OpenAI-compatible
 > HTTP server, since #187. It builds and runs here (section 3.4). Section 6 has the
