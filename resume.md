@@ -61,6 +61,26 @@ when resuming.
   - a dry rehearsal of the chain passed;
   - the harness tests passed (120).
   - The peers were told at 14:00. A reminder is due at 22:45.
+- **Morning to-do (2026-10-21):**
+  - `coreai/summary.md` on main still says the `llm-server` gate has not run. Update it once
+    the gate lands.
+  - The Core AI gate and the M8 raw files go through new `bench/*` PRs: M8 for the four
+    frameworks as one PR, and the Core AI gate with it or alone. MLC's text-only results go
+    into PR #9. Then run `agentbench m8-report`.
+  - If the `coreai` step fails with `wait_ready: timeout after 1800s`, the first-load
+    specialization ran long. A rerun by hand will hit the cache.
+  - If the chain is gone but the lock is still held, `cleanup` could not stop a server:
+    `gpu_lock.sh release` refuses while one of our ports listens. Check the ports, then run
+    `gpu_lock.sh release --force`.
+  - A lock that disappears overnight is a battery pause, not a failure. The runners release
+    it below 60 % before a long step and take it back at 80 %.
+- **Background finding (18:15):** an iOS Simulator device (`667C57BF…`, under
+  SimulatorTrampoline) has been booted since at least 2026-10-16.
+  - Its `intelligencetasksd` crashes about every 20 min (`EXC_BREAKPOINT`, 48–71 reports a
+    day), and crash reporting follows each crash.
+  - The quiet monitor judged every run with it in the background.
+  - Whether it caused the 11:38 `ReportMemoryException` is not known. It is the user's to
+    shut down; it was not touched.
 - **Waiting on the user:**
   - suggestd and mediaanalysisd paused;
   - M8's open questions: `cpuhalf` with 8 or 9 threads, GPU duty 0.5, about 85 GB written
