@@ -53,11 +53,19 @@ when resuming.
   - The thinking-on TTFT stays about 2.6–3.3 s (the 2048-token prefix-cache boundary).
   - **MTP is faster at temperature 1.0 than at 0 on oMLX** (thinking 28 → 35 tok/s on oQ8),
     the opposite of llama.cpp. A black-box check on the raw outputs shows sampling is
-    applied: 0 of 25 temperature-1.0 cells repeat, and none matches the greedy output. The
-    agent-benchmark session's reading of `mlx_vlm/speculative/{common,mtp}.py`: draft and
-    target sample with coupled RNG streams (`_SpeculativeSamplerRNG`, enabled when
-    temperature > 0), and the walk outputs the target's own token, so it stays lossless while
-    acceptance rises. Still to verify in the code before it goes into a report.
+    applied: 0 of 25 temperature-1.0 cells repeat, and none matches the greedy output.
+    Verified in the code at 07:30: text requests run through oMLX's Lightning MTP
+    (`omlx/patches/mlx_lm_mtp/batch_generator.py`; the server log says "MTP path activated"
+    for every request), not mlx-vlm's `_mtp_rounds` (that path, with its coupled RNG, serves
+    VLM drafters only). At temperature > 0, `_stochastic_verify_tokens` does standard
+    speculative sampling: drafts drawn from q with the request's filters (`_accept_lp_for`),
+    accept when u < p/q, residual max(p − q, 0) at the first rejection. Lossless; expected
+    acceptance 1 − TV(p, q). The per-request "accept=a/d" log lines give thinking acceptance
+    0.64/0.57 → 0.70/0.73 (oQ8, 16K/32K, temperature 0 → 1.0) and 0.67/0.65 → 0.69/0.70
+    (oQ4); structured stays about flat. llama.cpp (848bbda) also has a rejection verifier at
+    temperature > 0 (`common_sampler_sample_and_accept_n_rejection`, used when the drafter
+    returns draft probabilities); whether its MTP drafter does, and so why its thinking
+    acceptance fell from 0.85 to 0.56, is still open.
 - **lithos-metal text-only re-runs** (all three variants, M1 and M4):
   - lithos does have a prefix cache once all-text content is sent as strings: M1 warm TTFT
     5.0 s with 14,908 tokens cached, against 40.3 s cold. The earlier "no prefix cache"
@@ -73,8 +81,8 @@ when resuming.
 - **Still paused:** suggestd (43674) and mediaanalysisd (93568), state T since
   2026-10-18 22:35:45. The user resumes them with `kill -CONT 43674 93568`.
 - **Next (after the meeting, when the user says continue):**
-  1. No GPU needed: verify the coupled-RNG code points; look into the oMLX thinking-prefix
-     cache boundary (`omlx/scheduler.py`: `prefill_step_size` 2048, `_prefill_tail_plan`,
+  1. No GPU needed: check whether llama.cpp's MTP drafter returns draft probabilities (the
+     acceptance question above); look into the oMLX thinking-prefix cache boundary (`omlx/scheduler.py`: `prefill_step_size` 2048, `_prefill_tail_plan`,
      `_detect_needs_think_prefix`); the lithos summarizer fix; the summary hygiene check.
   2. A PR for the Q8_0 rows, the temperature-1.0 rows, the oMLX 8-bit M3, the oQ/MTP rows
      (with the MTP gate and M6), and the mlx-lm and lithos re-runs. No attribution lines.
