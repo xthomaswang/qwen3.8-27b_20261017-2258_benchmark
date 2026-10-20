@@ -30,12 +30,23 @@
   - The slope is -0.107 s/step over steps 1-20, and +0.068 s/step over steps 2-20.
   - Steps whose tool calls hit the 150-token cap end with an `incomplete_tool_call` stream
     error and report no cached tokens (`-`). They still count as latency samples.
-- **Thinking on costs ~2.5 s of TTFT per step.** With thinking on, the cached prefix is reused
-  only up to a block boundary: 14,336 of 16,000 tokens at 16K, and 30,720 of 32,000 at 32K.
-  Each request therefore re-prefills 1.3–1.7K tokens.
-  - M3 TTFT is 2.7–2.8 s with thinking on, against 0.27–0.41 s with it off.
+- **~3 s of TTFT after an output that crossed a 2048-token block.** oMLX caches generated
+  tokens too, in 2048-token blocks. When a response's output crosses the next block
+  boundary, the server stores the block-aligned chain and drops the prompt-end snapshot
+  (`omlx/scheduler.py` at `7a5a3d7`, the boundary store in `_get_boundary_store_override`).
+  The log then says, for example, "storing 16384/17000 tokens (block aligned)".
+  - A request that repeats the prompt then reuses only `floor(prompt / 2048) × 2048` tokens
+    and re-prefills the rest. That is 14,336 of 16,000 tokens at 16K and 30,720 of 32,000 at
+    32K.
+  - In M3 this hits every thinking cell. Its caps of 1000 and 2000 tokens always cross,
+    because the 16K and 32K prompts sit 384 and 768 tokens below a boundary. TTFT is
+    2.6–3.4 s there, against 0.26–0.53 s with thinking off, whose outputs of at most 300
+    tokens never cross.
+  - So thinking is not the cause, but long outputs make it likely. The same store decision
+    shows with thinking off when an output crosses (M4 step 20, the M5 helpers).
   - llama.cpp and vLLM-Metal show no such gap.
-  - M1 and M4 run with thinking off, so an agent step with thinking on pays this on top.
+  - M1 and M4 run with thinking off and a 150-token cap. An agent step with thinking on
+    pays up to about 2K tokens of re-prefill on top.
 - **Streaming granularity.** About 3.9 tokens per SSE chunk, with a chunk-gap p50 of
   ~150 ms. The decode rate is unaffected.
 - **The SSD prefix cache persists across restarts,** which is why G1 shows a 1.3 s first call.

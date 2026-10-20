@@ -6,4 +6,4 @@
 - `raw/`: one JSONL file per suite run, whose header holds the server flags and the machine
   state, plus the monitor TSVs. `raw/superseded/` keeps runs replaced by a later one.
 
-Results landed through pull requests #1 (Tier-1, 4-bit) and #4 (Tier-2), and #7 (Tier-3: Q8_0 with MTP, temperature 1.0).
+Results landed through pull requests #1 (Tier-1, 4-bit), #4 (Tier-2) and #7 (Tier-3: Q8_0 with MTP, temperature 1.0).
