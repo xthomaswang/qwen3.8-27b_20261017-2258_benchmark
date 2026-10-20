@@ -97,6 +97,14 @@
     4-bit row; e2e median 5.92 s; last run over first 1.02; server tree 26 → 33 (peak) →
     22 GiB. The 89 errors are `incomplete_tool_call` at the 150-token cap, the same 38 %
     share as the 4-bit row (72 of 188).
+  - M6, oQ8 with MTP, 30 min (2026-10-20 12:30): 10 runs (9 complete) and 190 requests, so
+    8-bit weights with MTP keep the 4-bit row's throughput (188); e2e median 7.30 s; last
+    run over first 1.01; server tree 46 → 47 (peak) → 42 GiB, against 24 GiB for the 4-bit
+    row. The 67 errors are `incomplete_tool_call` at the 150-token cap (35 %).
+    - Two earlier attempts were disturbed: at 11:38 by `ReportMemoryException` at 99 % CPU,
+      and at 12:13 by Spotlight (`mds`) at 56 %. They stay local in `raw/_unverified/`.
+    - The monitor TSV (`monitor-oq8mtp-mtp-on-20261020-112607.tsv`) covers all three
+      attempts; the verified run is 12:30–13:02.
   - Thinking-on TTFT stays 2.6–3.4 s on every oQ row (the block boundary above).
 - **Superseded gate.** The 17:43 gate is in `raw/superseded/`.
 
@@ -589,6 +597,22 @@ Source: `raw/m4-oq8mtp-mtp-on-20261020-012742.jsonl`.
 TTFT slope over steps 1-20: -0.1203 s/step (steps 2-20: 0.0700 s/step); total e2e per run: 187.4, 194.8, 198.0 s.
 
 21 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
+
+### M6 memory and stability
+
+Source: `raw/m6-oq8mtp-mtp-on-20261020-123031.jsonl`.
+
+| Metric | Value |
+| --- | --- |
+| footprint at 64,000 tokens: server tree peak GiB | 46.00 |
+| footprint: system used peak GiB | 72.51 |
+| loop minutes / runs (complete) / requests | 30.0 / 10 (9) / 190 |
+| errors | 67 |
+| server tree GiB start / peak / end | 46.00 / 47.00 / 42.00 |
+| server tree growth GiB | -4.00 |
+| system used GiB start / end | 72.52 / 69.19 |
+| e2e last run / first run (median per step) | 1.01 |
+| e2e s over all requests | 7.297 (5.782-25.666) |
 
 ### M7 tool-call correctness
 
