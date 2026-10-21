@@ -1,9 +1,44 @@
 # Resume — current progress
 
-Updated: 2026-10-21 17:00 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-21 18:10 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-21 17:00): PRs #9–#12 merged, disk cleaned, q4 vs q8 measured
+## Current state (2026-10-21 18:10): oQ precision study scheduled for 23:00
+
+- **The user's request.** Test oQ5 and oQ6 too, for the full speed and accuracy difference.
+  Then open a GitHub PR that reports the differences across precisions. It runs at 23:00
+  tonight, not before.
+- **The chain is `logs/night-20261021.sh`** (local). It was launched detached at 18:07 as
+  PID/PGID 32947 and waits for 23:00; stop it with `kill -TERM -32947`.
+  - Its log is `logs/night-20261021.log`. It needs the lock for about 6 h, to roughly 05:00.
+  - Steps:
+    1. `conv`: convert oQ5 and oQ6 from BF16 with `scripts/oq_convert.py`, about 2 min each.
+       The chain stops if either checkpoint is missing afterwards.
+    2. `gate`: the gate with MTP on, for oQ5 and oQ6.
+    3. `mtp`: M1/M3/M4/M7 for oQ4, oQ5, oQ6 and oQ8.
+    4. `t1`: the model's sampling (M3/M4, and M7 with 5 trials), in reverse order.
+    5. `m6`: 30 min each.
+  - Every run is tagged `*-prec` (`scripts/run_tier2.sh` `prec-*` steps, 233de73). oQ4 and
+    oQ8 are re-run so the four levels share one night: last night's oQ8 M4 baseline was 4 %
+    off its Tier-3 value. MTP-on only.
+  - At exit it writes `logs/night-20261021.status` (`state=`, `failed_steps=`, `oq5=`,
+    `oq6=`).
+- **Meta Muse runs the accuracy part after the status file appears, not when the lock is
+  free.** It covers oQ5 and oQ6:
+  - token KL against its saved BF16 logits;
+  - screenshot reading, 12 × 5;
+  - Aider, 12 exercises × 3 harnesses.
+  - Its oQ4/oQ8 numbers from 2026-10-21 stand.
+  - It will send the results here.
+  - oQ conversion is deterministic: the first oQ4 shard of ours and of Meta Muse's has the
+    same sha256.
+- **Morning.** A session cron fires at 07:52 (session-only).
+  - Regenerate `omlx/summary.md` for the `-prec` tags.
+  - Open a `bench/precision` PR: the raw files, a precision comparison, and the README caveat
+    replaced. Do not merge.
+  - Ask the user again about deleting BF16; tonight's conversion needs it.
+
+## Previous state (2026-10-21 17:00): PRs #9–#12 merged, disk cleaned, q4 vs q8 measured
 
 - **Merged on the user's go-ahead:** #9, #10, #11, then #12, as merge commits; the branches are kept.
   - The working-tree files matched the merged main (checked with a temporary index), and the
