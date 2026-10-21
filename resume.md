@@ -33,8 +33,10 @@ when resuming.
     as the user asked;
   - tiers and tag parts;
   - the status table brought up to date.
-- **Night chain: launched at 18:12, detached, waiting for 23:00.**
-  - PID 25058 in its own session; the script is `logs/night-20261020.sh` and the log
+- **Night chain: detached, waiting for 23:30.**
+  - The user moved the start from 23:00 to 23:30. The first launch (18:12, PID 25058) was
+    stopped while it still waited, and the chain was relaunched at 20:29.
+  - PID 32359 in its own session; the script is `logs/night-20261020.sh` and the log
     `logs/night-20261020.log` (both local).
   - Steps:
     1. `coreai`: the Core AI `llm-server` gate (`run_tier2.sh coreai-gate`, port 8706,
@@ -51,16 +53,17 @@ when resuming.
   - The lock is acquired with ETA 750 min. A busy lock is retried every 2 min for up to
     45 min, and a listening port 8500 is waited out for up to 30 min.
   - On exit, a trap stops any load and server of ours and releases the lock.
-  - Stop the whole chain with `kill -TERM -25058` (the process group).
+  - Stop the whole chain with `kill -TERM -32359` (the process group).
   - Restart from a step with `bash logs/night-20261020.sh <step>`; `START_AT=now` skips the
     wait.
-  - Expected end: about 10:00–12:00 on 2026-10-21.
+  - Expected end: about 10:30–12:30 on 2026-10-21.
 - **Checks done before the launch:**
   - `serve.sh coreai server 4bit --dry-run` passed;
   - `M8_DRY_RUN=1` plans passed for all four frameworks;
-  - a dry rehearsal of the chain passed;
+  - a dry rehearsal of the chain passed, again after the move to 23:30;
   - the harness tests passed (120).
-  - The peers were told at 14:00. A reminder is due at 22:45.
+  - The peers were told at 14:00, and of the move to 23:30 at 20:30. A reminder is due at
+    23:15.
 - **Morning to-do (2026-10-21):**
   - `coreai/summary.md` on main still says the `llm-server` gate has not run. Update it once
     the gate lands.
