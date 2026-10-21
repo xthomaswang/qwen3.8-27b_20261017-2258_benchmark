@@ -31,6 +31,10 @@
 #     decoder; the other oq steps run the gate with MTP off only)
 #   sampling at the model's own settings (temperature 1.0, top_p 0.95, top_k 20): q8-on-t1
 #     q8-off-t1 q4-on-t1 q4-off-t1 (M3 at 16K/32K, cap 150 and thinking cap 1000; M4 for MTP on)
+#   Precision study (2026-10-21 night, the user's request): oq5-convert oq6-convert, then oMLX with
+#     MTP on for N in 4 5 6 8, all tagged *-prec so the four levels share one night:
+#     prec-oqN-gate (the new levels only), prec-oqN-mtp (M1/M3/M4/M7), prec-oqN-t1 (the model's
+#     sampling: M3/M4 as in the *-t1 steps, and M7 with 5 trials), prec-m6-oqN (30 min)
 # Between steps the machine idles COOL_S seconds (default 120) so each server starts cool.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
@@ -79,7 +83,7 @@ for step in $steps; do
     q4-on-t1)       SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-on 4bit llamacpp 4bit-mtp-on-t1 m3,m4 --spec-label on --extra-body "$SAMP" ;;
     q4-off-t1)      SUITE_ARGS_m3="$M3_T1" $rf llama.cpp mtp-off 4bit llamacpp 4bit-mtp-off-t1 m3 --spec-label off --extra-body "$SAMP" ;;
     omlx8-t1)       $rf omlx spec-off 8bit omlx 8bit-spec-off-t1 m4 --spec-label off --extra-body "$SAMP" ;;
-    oq8-convert|oq4-convert)
+    oq[4-8]-convert)
                     lvl=${step#oq}; lvl=${lvl%-convert}
                     HF_HUB_OFFLINE=1 "$OMLX_PY" -u scripts/oq_convert.py --level "$lvl" ;;
     omlx-oq8-off|omlx-oq4-off)
@@ -92,6 +96,15 @@ for step in $steps; do
                     t=${step#omlx-}; t=${t%-off-t1}; SUITE_ARGS_m3="$M3_T1" $rf omlx spec-off ${t}mtp omlx ${t}mtp-spec-off-t1 m3,m4 --spec-label off --extra-body "$SAMP" ;;
     omlx-oq8-mtp-gate|omlx-oq4-mtp-gate)
                     t=${step#omlx-}; t=${t%-mtp-gate}; $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on gate --spec-label on ;;
+    prec-oq[4-8]-gate)
+                    t=${step#prec-}; t=${t%-gate}; $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on-prec gate --spec-label on ;;
+    prec-oq[4-8]-mtp)
+                    t=${step#prec-}; t=${t%-mtp}; $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on-prec m1,m3,m4,m7 --spec-label on ;;
+    prec-oq[4-8]-t1)
+                    t=${step#prec-}; t=${t%-t1}; SUITE_ARGS_m3="$M3_T1" SUITE_ARGS_m7="--trials 5" \
+                    $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on-t1-prec m3,m4,m7 --spec-label on --extra-body "$SAMP" ;;
+    prec-m6-oq[4-8])
+                    t=${step#prec-m6-}; QUIET_RETRIES=2 SUITE_ARGS_m6="--minutes 30" $rf omlx mtp-on ${t}mtp omlx ${t}mtp-mtp-on-prec m6 --spec-label on ;;
     mlxlm-8bit-fix) $rf mlx-lm server 8bit mlxlm 8bit m1,m4 --spec-label off ;;
     mlxlm-4bit-fix) $rf mlx-lm server 4bit mlxlm 4bit m1,m4 --spec-label off ;;
     lithos-dspark-fix)  SUITE_ARGS_m4="--runs 1" $rf lithos-metal dspark 4bit lithos 4bit-dspark m1,m4 --spec-label on ;;

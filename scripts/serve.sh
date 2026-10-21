@@ -11,6 +11,7 @@
 #   mlx-lm        server                     8bit 4bit    8701
 #   llama.cpp     mtp-off mtp-on conc        4bit 8bit    8702   (4bit: UD-Q4_K_M; 8bit: Q8_0)
 #   omlx          spec-off  (spec-on: stub)  8bit 4bit    8703
+#                 spec-off mtp-on            oq4mtp..oq8mtp  (oQ checkpoints with the MTP head)
 #   lithos-metal  dspark no-draft            4bit nvfp4   8704
 #   vllm-metal    spec-off  (spec-on: stub)  8bit 4bit    8705
 #   mlc-llm       server think               4bit         8700  (q4f16_1 source build; text only)
@@ -127,7 +128,7 @@ build_llama() {
 }
 
 build_omlx() {
-  case "$TIER" in 8bit|4bit) ;; oq4mtp|oq8mtp) build_omlx_oq; return ;; *) bad_tier "8bit 4bit oq4mtp oq8mtp" ;; esac
+  case "$TIER" in 8bit|4bit) ;; oq[4-8]mtp) build_omlx_oq; return ;; *) bad_tier "8bit 4bit oq4mtp..oq8mtp" ;; esac
   case "$VARIANT" in
     spec-off) ;;
     spec-on) unsupported "oMLX speculative decoding cannot run from local files. Lightning MTP \
