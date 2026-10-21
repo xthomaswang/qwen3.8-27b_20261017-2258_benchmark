@@ -11,7 +11,7 @@ current at the time of its own run.
 | Chip | Apple M5 Max — 18-core CPU (6 Super + 12 Performance), 40-core GPU, Metal 4 |
 | Memory | 128 GB unified |
 | GPU wired limit | `iogpu.wired_limit_mb = 0` (macOS default) |
-| Power | AC power, battery 100%; `powermode 2` (High Power); sleep prevented with `caffeinate` during runs |
+| Power | AC power, battery 100%; `powermode 2` (High Power); sleep prevented with `caffeinate` during runs. The night of 2026-10-20/21 ran on a 94 W adapter, which does not cover sustained full load: the battery fell from 100% at 23:30 to 49% at 09:35, never below the 40% floor |
 
 ## Software
 
