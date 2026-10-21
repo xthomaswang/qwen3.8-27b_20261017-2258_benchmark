@@ -23,6 +23,11 @@ lock was never taken. Claims cite `file:line`, PR numbers or commits. Items mark
   **source-built, editable** TVM and MLC-LLM (section 3).
   - The nightly wheels were uninstalled; section 3.3 says why.
   - Copies of the wheels stay in `.venv/wheels/`.
+- **Deleted 2026-10-21.** The campaign closed and this build tree was removed to free disk.
+  - Its four driver scripts are kept in this repo as [`bench-tools/`](bench-tools/),
+    unchanged, so they still name their original paths.
+  - The build and pipeline logs are kept only in the local, gitignored `logs/mlc-build/`,
+    because they contain absolute local paths.
 - Model: `Qwen/Qwen3.8-27B` BF16, snapshot `1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0`. It is
   complete: 18 shards, 55.56 GB (`scripts/hf_snapshot.py --safetensors`, exit 0, 02:00).
   - `Qwen3_5ForConditionalGeneration`, `model_type=qwen3_5`; the text part is `qwen3_5_text`.
@@ -167,7 +172,7 @@ prefix cache. The relevant results:
 
 The build follows MLC's "Build from Source" (`main:docs/install/mlc_llm.rst:160-245`) and the
 TVM page it points to (`3rdparty/tvm/docs/install/from_source.rst`, steps 2–4).
-- **CPU courtesy.** Every compile ran through `serving/mlc-llm_bench/bench-tools/heavy.py`,
+- **CPU courtesy.** Every compile ran through [`bench-tools/heavy.py`](bench-tools/heavy.py),
   a wrapper that never compiles while `local_ai-benchmark` holds the GPU lock.
   - It SIGSTOPs the process group if that lock appears mid-run.
   - It runs at `nice 19` with at most 8 jobs under another session's lock, and at full speed
@@ -283,7 +288,7 @@ Notes:
 
 ### 3.2 Verification (executed 02:12, CPU only)
 
-Script: `serving/mlc-llm_bench/bench-tools/verify.py`. Log:
+Script: [`bench-tools/verify.py`](bench-tools/verify.py). Log:
 `serving/mlc-llm_bench/logs/verify.log`. Every check ran under `.venv/bin/python -I` from a
 neutral directory, with `HF_HUB_OFFLINE=1`.
 - **`import tvm, mlc_llm` works**, with no abort.
@@ -363,7 +368,7 @@ The tiny model ran first with the same commands (`SRC` = the `Qwen/Qwen3.5-0.8B`
 - **Snapshots.** Both were complete before the run (`scripts/hf_snapshot.py --safetensors`):
   - 27B: 18 shards, 55.56 GB;
   - 0.8B: 1.75 GB.
-- **Commands.** The driver is `serving/mlc-llm_bench/bench-tools/pipeline.sh <tiny|27b>`. The
+- **Commands.** The driver is [`bench-tools/pipeline.sh`](bench-tools/pipeline.sh) `<tiny|27b>`. The
   exact command lines and outputs are in `serving/mlc-llm_bench/logs/pipeline-{tiny,27b}-*.log`.
 
 | | Qwen3.5-0.8B | Qwen3.8-27B |
