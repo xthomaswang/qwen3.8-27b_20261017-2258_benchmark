@@ -1,9 +1,67 @@
 # Resume — current progress
 
-Updated: 2026-10-21 10:00 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-21 14:30 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-21 10:00): campaign closed by the user, PRs #9–#12 open
+## Current state (2026-10-21 14:30): PRs #9–#12 merged, disk cleaned, q4 vs q8 with Meta Muse
+
+- **Merged on the user's go-ahead:** #9, #10, #11, then #12, as merge commits; the branches are kept.
+  - The working-tree files matched the merged main (checked with a temporary index), and the
+    tree was then synced with the merge-trap procedure.
+  - e71885c on main keeps the MLC build scripts in `mlc-llm/bench-tools/`, because their
+    build tree was deleted. `mlc-llm/env.md` links them, and the build logs moved to the
+    local `logs/mlc-build/`.
+- **Disk cleanup.** The user's rule: keep only the recommended oMLX setup and what is still
+  in use. Free space went from 404.7 GiB to 1000.5 GiB.
+  - Deleted:
+    - `serving/omlx_0.7/.bench-home/cache` (406 GB);
+    - `serving/{llama.cpp, lithos-metal, vllm-metal, mlx-lm, mlc-llm_bench, coreai-models}`.
+      lithos-metal went with its 37 GB `.cache/packs`. Each checkout can be rebuilt:
+      - the tags and commits are in the framework `env.md` files;
+      - the one lithos change is `lithos-metal/lm_head_rename.patch`;
+      - the MLC scripts are in `mlc-llm/bench-tools/`.
+    - `models/coreai/*` and `models/mlc/*`, which held the 27B artifacts and the 0.8B smoke
+      artifacts;
+    - `models/derived/*-procfix` (`scripts/make_procfix.sh` rebuilds them) and the
+      `models/hf-bench` link to the 4-bit repo;
+    - `~/Library/Caches/coreai-cache/26B5101f` (33 GB);
+    - from the HF cache, with `hf cache rm` (86.9 GB):
+      - `unsloth/Qwen3.8-27B-GGUF`;
+      - `nvidia/Qwen3.8-27B-NVFP4`;
+      - `LithosAI/Qwen3.8-27B-DSpark-NVFP4`;
+      - `mlx-community/Qwen3.8-27B-4bit`.
+  - **The HF cache layout.** hf 2.2 keeps large files in a shared `hub/blobs/<xx>/<sha256>`
+    store, and each repo's `blobs/` links into it.
+    - Two blobs were shared with repos that stay. They were backed up first, and
+      `hf cache rm` kept them.
+    - No link dangles under the remaining repos or under `models/`.
+  - Kept:
+    - the recommended setup:
+      - `models/oq/*`;
+      - `models/hf-bench`, with the oQ links and the 8-bit link;
+      - `serving/omlx_0.7`, with the rest of `.bench-home` (settings, logs, stats);
+    - the agent benchmark's:
+      - `~/.omlx`;
+      - `serving/omlx` and `serving/omlx-v0.7.1rc1`;
+      - `models/hf` and `models/chat/*`;
+      - HF `mlx-community/Qwen3.8-27B-8bit`;
+    - the user's: `serving/mlc-llm*`, `models/embedding`, and the other HF repos;
+    - HF `Qwen/Qwen3.5-0.8B` (1.8 GB). It came in for the smoke tests, and stays because the
+      user's apple-silicon-llm-bench uses this model.
+    - **HF `Qwen/Qwen3.8-27B` BF16 (55.6 GB), at Meta Muse's request.**
+      - It is the reference for their q4-vs-q8 check and the source for an oQ4 conversion.
+      - Meta Muse will say when they no longer need it; delete it only then.
+- **q4 vs q8 answer quality has been handed to Meta Muse (the user's request).** If the
+  answers differ little, the user wants oQ4.
+  - Their plan has two layers:
+    1. Per-token distributions against BF16: KL divergence, top-1 agreement and perplexity.
+    2. Tasks: repeated samples of M7-style tool calls, screenshot reading, and Aider coding
+       tasks. The models alternate, with the same sampling (1.0/0.95/20, thinking off).
+  - It needs about 1.5–2 h of GPU, under the lock protocol.
+  - They will send the conclusion here. Record it in this file, and replace the README caveat
+    "Answer quality was not compared".
+
+## Previous state (2026-10-21 10:00): campaign closed by the user, PRs #9–#12 open
 
 - **The user closed the campaign at 09:39.** In their words, the rest need not run because
   there is a conclusion.
