@@ -30,18 +30,36 @@
     request. Each came right after a request that raised in the server (the PIL import), and
     the server log has no entry for either. So the client most likely reused a connection
     the server had closed. Their outcomes would not change.
-- **Prefill is slow.**
-  - G1's 12,849-token prompt took 102.3 s to the first token (126 tok/s).
-  - G5's 64,000 tokens took 815.1 s (78.5 tok/s), against 102–119 s on the oMLX rows.
+- **No prefix reuse (M1).** A repeated 14,469-token agent prompt takes 94.0 s to the first
+  token warm and 92.6 s cold (0.99×), with 0 cached tokens. The warm TTFT is 2.7 s on oMLX
+  4-bit and 4.5 s on llama.cpp 4-bit. So every agent turn re-prefills the whole conversation.
+- **Prefill is slow (M2).**
+  - 151 tok/s at 16K (105.6 s) and 116 tok/s at 32K (275.6 s), against 765 and 728 tok/s on
+    oMLX 4-bit, and 568 and 518 tok/s on llama.cpp 4-bit.
+  - The gate's long prompts agree: G1's 12,849 tokens took 102.3 s (126 tok/s), and G5's
+    64,000 tokens 815.1 s (78.5 tok/s), against 102–119 s on the oMLX rows.
   - MLC's GDN prefill reuses the sequential recurrent decode kernel (#3480 is open), as
     `env.md` expected.
-- **Decode slows with context.** These come from short samples of 4, 20 and 8 tokens; M3
-  measures decode properly.
-  - About 41 tok/s after a 40-token prompt (G4).
-  - 11 tok/s at 12.8K with the grammar on (G1).
-  - 3 tok/s at 64K (G5).
-- **When.** The gate ran on 2026-10-20 between 13:05 and 13:21, on AC power, under macOS 27.2
-  (26B5101f). It passed the quiet pre-flight and the monitor.
+- **Decode slows with context (M3).** With the grammar on, thinking off and cap 150, decode is
+  9.1 tok/s at 16K and 5.5 tok/s at 32K. At 16K, oMLX 4-bit decodes 27.4 tok/s and llama.cpp
+  4-bit 24.0, both without speculative decoding.
+  - With the cold prefill, one capped answer takes 121.5 s at 16K and 302.4 s at 32K, end to
+    end.
+  - The gate's short samples agree: about 41 tok/s after a 40-token prompt (G4), and 3 tok/s
+    at 64K (G5).
+- **When.** The gate ran on 2026-10-20 between 13:05 and 13:21. M1, M2 and M3 ran on
+  2026-10-21 between 07:28 and 08:47. All ran on AC power, under macOS 27.2 (26B5101f), and
+  each passed the quiet pre-flight and the monitor.
+  - This was a trimmed text-only set (`run_tier2.sh mlc-text-trim`): M1 with 2 warm and 2
+    cold trials, and M2 and M3 at 16K and 32K only, M3 with cap 150 and no thinking bucket.
+  - M2's first attempt was disturbed by `airportd` at 50 % CPU (07:44) and repeated. It stays
+    local in `raw/_unverified/`.
+- **Not run.**
+  - M7 did not complete. Its first attempt was disturbed by `mobileassetd` at 62 % CPU (09:00),
+    and the repeat was stopped at 09:39, when the campaign closed. Neither file is published.
+  - The full text-only set (`mlc-text`: the default trial counts and sizes, M3's thinking
+    bucket and a one-run M4) was not run, and image cases cannot run on this text-only
+    artifact.
 
 <!-- agentbench:begin summary 4bit -->
 ## Results, tag `4bit`
@@ -58,4 +76,33 @@ Source: `raw/gate-4bit-20261020-130554.jsonl`.
 | G3 | Anthropic /v1/messages: text, tool_use, image, image in tool_result | **FAIL** | text FAIL, tool_use FAIL, image FAIL, tool_result image FAIL (first failure: transport: ReadError: ) |
 | G4 | Thinking control (enable_thinking / reasoning_effort) | **FAIL** | N/A: mlc: no per-request thinking control (fixed by the served model config, qwen3_5 vs qwen3_5_nothink); thinking fields are stripped; off: no reasoning [shaped: mlc: stripped chat_template_kwargs (strict schema rejects it with HTTP 400); mlc: stripped reasoning_effort='none' (only [] accepted)] \| G4.effort-none-only: accepted; no reasoning [shaped: mlc: stripped reasoning_effort='none' (only [] accepted)] \| G4.effort-high: N/A: mlc: no per-request thinking control (fixed by the served model config, qwen3_5 vs qwen3_5_nothink); thinking fields are stripped \| G4.effort-minimal: N/A: mlc: no per-request thinking control (fixed by the served model config, qwen3_5 vs qwen3_5_nothink); thinking fields are stripped \| G4.default: accepted; no reasoning |
 | G5 | Context >= 64K: a 64,000-token prompt completes | **PASS** | 64000-token prompt completed: prompt_tokens=64000, TTFT 815.1 s; configured context: unknown; peak server footprint 25.0 GiB |
+
+### M1 cached-prefix TTFT (text_only, tool calls via structured output)
+
+Source: `raw/m1-4bit-20261021-072837.jsonl`.
+
+| Phase | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | first chunk | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 2 | 94.014 (92.855-95.174) | 98.011 (96.850-99.171) | 0 | 14469 | content | 0 |
+| cold | 2 | 92.606 (92.483-92.730) | 96.604 (96.479-96.729) | 0 | 14486 | content | 0 |
+
+Cold / warm TTFT (medians): 0.99x.
+
+### M2 cold prefill (text_only, tool calls via structured output)
+
+Source: `raw/m2-4bit-20261021-075801.jsonl`.
+
+| Prompt tokens (target) | n | prefill s (TTFT) | throughput tok/s | prompt tok (server) | cached tok | timing | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 16,000 | 3 | 105.615 (105.437-105.735) | 151 (151-152) | 16000 | 0 | ttft | 0 |
+| 32,000 | 3 | 275.582 (275.488-275.905) | 116 (116-116) | 32000 | 0 | ttft | 0 |
+
+### M3 short structured decode (text_only, tool calls via structured output)
+
+Source: `raw/m3-4bit-20261021-081902.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| off | off | 16,000 | 150 | 3 | 9.1 (9.1-9.1) | 105.178 (105.109-105.215) | 121.519 (121.431-121.547) | 150 | 3/3 | 109.6 | 110.1 | 1.00 |
+| off | off | 32,000 | 150 | 3 | 5.5 (5.5-5.5) | 275.288 (275.034-275.541) | 302.446 (302.187-302.689) | 150 | 3/3 | 182.4 | 182.8 | 1.00 |
 <!-- agentbench:end summary 4bit -->

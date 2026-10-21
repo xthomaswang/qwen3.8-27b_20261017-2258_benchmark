@@ -6,5 +6,5 @@
 - `raw/`: one JSONL file per suite run, whose header holds the server flags and the machine
   state, plus the monitor TSVs.
 
-Results land through the `bench/mlc-llm` pull request (a text-only reference row). The gate
-is in; the text-only metric suites follow.
+Results land through pull request #9 (a text-only reference row): the gate, then M1–M3 from a
+trimmed text-only set. M7 did not complete; the campaign closed on 2026-10-21.
