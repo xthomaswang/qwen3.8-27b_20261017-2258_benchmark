@@ -1,9 +1,9 @@
 # Resume — current progress
 
-Updated: 2026-10-21 14:30 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-21 17:00 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-21 14:30): PRs #9–#12 merged, disk cleaned, q4 vs q8 with Meta Muse
+## Current state (2026-10-21 17:00): PRs #9–#12 merged, disk cleaned, q4 vs q8 measured
 
 - **Merged on the user's go-ahead:** #9, #10, #11, then #12, as merge commits; the branches are kept.
   - The working-tree files matched the merged main (checked with a temporary index), and the
@@ -51,15 +51,48 @@ when resuming.
     - **HF `Qwen/Qwen3.8-27B` BF16 (55.6 GB), at Meta Muse's request.**
       - It is the reference for their q4-vs-q8 check and the source for an oQ4 conversion.
       - Meta Muse will say when they no longer need it; delete it only then.
-- **q4 vs q8 answer quality has been handed to Meta Muse (the user's request).** If the
-  answers differ little, the user wants oQ4.
-  - Their plan has two layers:
-    1. Per-token distributions against BF16: KL divergence, top-1 agreement and perplexity.
-    2. Tasks: repeated samples of M7-style tool calls, screenshot reading, and Aider coding
-       tasks. The models alternate, with the same sampling (1.0/0.95/20, thinking off).
-  - It needs about 1.5–2 h of GPU, under the lock protocol.
-  - They will send the conclusion here. Record it in this file, and replace the README caveat
-    "Answer quality was not compared".
+- **Meta Muse measured q4 vs q8 answer quality at the user's request.** The user's rule:
+  if the answers differ little, use oQ4.
+  - Timing: 14:32–16:54 under the GPU lock, which was released with port 8500 closed.
+  - Setup:
+    - both checkpoints were Meta Muse's own conversions;
+    - one oMLX 0.7.1rc1 + G2b + MTP served both;
+    - sampling 1.0/0.95/20, thinking off, the models alternating ABBA.
+  - Records:
+    - the criteria were registered in advance, in personal-agent-bench `e8ebedc`;
+    - the results are in `385aaf9` (`docs/serving-choice.md` "A2 revisited",
+      `results/q4q8-20261021/`) and harness-smoke `4af0982`;
+    - both repos are local only, with no remote.
+  - **Token-level gate: fails.**
+    - Reference: BF16 over about 40K tokens, minus the positions where BF16 itself is
+      unstable.
+    - oQ4: KL 0.216, top-1 91.7 %. oQ8: KL 0.013, top-1 98.5 %.
+    - oQ4 is fine on code and on the agent's assistant turns: KL 0.016–0.020, top-1 96 % or
+      more.
+    - Its gap is in README text:
+      - the oMLX README: top-1 92–93 %, CE +2 %;
+      - the Hermes README (repetitive markdown and HTML): KL 0.18, CE +18 % and +27 %.
+  - **M7 (24 cases × 5): passes.** oQ4 111/120, oQ8 98/120.
+    - Most oQ8 misses called a "look" tool first (screenshot, list directory).
+    - It ran this repo's harness at e1cffc7, read-only, and the tree stayed clean.
+    - The harness refuses port 8500 by design, so Meta Muse ran a TCP forwarder 8599 → 8500
+      during 16:37–16:47 only. It reports that the user approved this.
+  - **Screenshot reading (12 × 5): passes.** 54/60 each, with the same misses.
+  - **Aider (12 exercises × 3 harnesses): fails.** oQ4 27/36, oQ8 33/36 (discordant pairs 8
+    vs 2, p = 0.11).
+  - **Speed.** On the 25 pairs that both passed, oQ4 was about 22 % faster. Its M7 calls
+    took 2.10 s against 2.55 s.
+  - By the pre-registered rule the bench stays on oQ8, and the user decides.
+  - Pending:
+    - the user's choice;
+    - then a PR for the README conclusion that replaces "Answer quality was not compared".
+      It should cite the numbers, not the local repos.
+- **BF16 `Qwen/Qwen3.8-27B` (55.6 GB) is no longer needed by Meta Muse.**
+  - The reference logits are saved as a 20 MB `bf16.npz`. BF16 would be needed again only
+    for a larger prose corpus.
+  - It shares no blob with the remaining repos, and nothing links into it.
+  - The auto-mode classifier blocked its deletion, so it waits for the user's explicit OK.
+    The command is `hf cache rm model/Qwen/Qwen3.8-27B -y`; then check that no links dangle.
 
 ## Previous state (2026-10-21 10:00): campaign closed by the user, PRs #9–#12 open
 
