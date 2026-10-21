@@ -1,9 +1,68 @@
 # Resume — current progress
 
-Updated: 2026-10-20 14:00 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-21 10:00 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-20 14:00): PRs #5–#8 merged, MLC gate in PR #9, night chain next
+## Current state (2026-10-21 10:00): campaign closed by the user, PRs #9–#12 open
+
+- **The user closed the campaign at 09:39.** In their words, the rest need not run because
+  there is a conclusion.
+  - The night chain was stopped during MLC's M7 repeat. Its trap stopped the MLC server and
+    released the lock at 09:39:26.
+  - The peers were told. Meta Muse also got the Chinese summary of the conclusion.
+  - No further GPU work is planned.
+- **The night chain ran 23:30–09:39.** The user moved its start from 23:00, so it was
+  relaunched at 20:29 as PID 32359.
+  - **`coreai`.** The `llm-server` gate ran 23:31–23:36 and was verified.
+    - Its rc 1 came only from the summary regeneration: `KeyError: 'tag'` on the `ab-*`
+      files. f3afa53 on main fixes it, with a regression test (121 tests pass).
+  - **`mech` passed.** M8 then ran for llama.cpp, oMLX oQ8 + MTP, lithos-metal and
+    vLLM-Metal: 52 blocks × M1, M3 and M4, all verified. One lithos-metal baseline M3 was
+    repeated after `airportd`.
+  - **`mlc` (`mlc-text-trim`).**
+    - M1, M2 and M3 were verified; M2 was repeated after `airportd`.
+    - M7's first attempt was disturbed by `mobileassetd` (09:00). The repeat was stopped at
+      09:39, and its partial file is in `mlc-llm/raw/_unverified/`.
+  - **Battery.** The adapter was 94 W. The battery was at 100 % at 23:30, 70 % at its lowest
+    during M8, and 49 % at 09:35. No suite ran below the 40 % floor.
+- **PRs, all MERGEABLE and CLEAN.** They wait for the user's go-ahead to merge; the
+  authorization for #5–#8 does not carry over.
+  - #9 `bench/mlc-llm`: the MLC gate plus text-only M1–M3.
+  - #10 `bench/coreai-gate`: the Core AI `llm-server` gate. G1, G4 and G5 pass; G2, G2b and
+    G3 fail. Every request decodes all of `max_tokens`.
+  - #11 `bench/m8`: `M8.md` and 208 raw files.
+  - #12 `bench/summary`: the README conclusion and status, and the ENVIRONMENT power note.
+    Merge it last.
+  - After the merges, sync with the merge-trap procedure below. The checkout list must also
+    include `mlc-llm M8.md README.md ENVIRONMENT.md`.
+- **Conclusion (README, PR #12).** Use oMLX 0.7.1rc1 with Lightning MTP on oQ checkpoints,
+  plus the G2b patch (`57620a3f`). The runner-up is llama.cpp with MTP, a stock release that
+  passes every gate.
+- **Not run:**
+  - M8: the power scenario, and oQ4 + MTP;
+  - MLC: M7, the full text-only set and the images;
+  - Core AI beyond the gate;
+  - the patched oMLX build through this harness;
+  - the `cache_reasoning_output: false` check.
+- **Disk cleanup is waiting for the user's confirmation.** Nothing has been deleted.
+  - Caches:
+    - `serving/omlx_0.7/.bench-home/cache`: 406 GB of oMLX SSD cache, 227 GB of it GDN
+      sidecars;
+    - `serving/lithos-metal/.cache/packs`: 37 GB;
+    - `~/Library/Caches/coreai-cache`: 33 GB.
+  - Rebuildable:
+    - `models/coreai/qwen3_8_27b_qwen3_5_cfg_dynamic`: 16 GB;
+    - `models/mlc/Qwen3.8-27B-q4f16_1-MLC*`: 14 GB;
+    - `serving/mlc-llm_bench`: 7.2 GB;
+    - `serving/coreai-models`: 3.0 GB;
+    - `serving/vllm-metal`: 1.7 GB.
+  - Keep:
+    - `models/oq/*` (44 GB), the recommended setup;
+    - `models/chat/Qwen3.8-27B-oQ8-mtp` (28 GB), which belongs to the agent benchmark.
+  - The shared HF cache is add-only, by logical size: BF16 52 GB, GGUF 45 GB, mlx 8bit
+    28 GB, NVFP4 20 GB, mlx 4bit 15 GB, DSpark draft 1.1 GB.
+
+## Previous state (2026-10-20 14:00): PRs #5–#8 merged, MLC gate in PR #9, night chain next
 
 - **M6 for oMLX oQ8 + Lightning MTP: verified on the third attempt (12:30–13:02).**
   - 190 requests in 30 min (10 runs, 9 complete), against 188 for the 4-bit row and 233 for
