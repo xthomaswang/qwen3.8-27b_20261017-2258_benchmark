@@ -33,6 +33,8 @@ def select(files: Iterable[Path], tag: str | None = None, all_runs: bool = False
         except (ValueError, json.JSONDecodeError):
             continue
         h = run["header"]
+        if "tag" not in h or "suite" not in h:  # not a suite run, e.g. Core AI's ab-* direct-call files
+            continue
         if tag and h["tag"] != tag:
             continue
         by[h["tag"]][h["suite"]].append(run)

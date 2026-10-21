@@ -1,7 +1,9 @@
+import json
+
 import pytest
 
 from agentbench.cli import main
-from agentbench.summarize import summarize
+from agentbench.summarize import select, summarize
 from agentbench.suites.common import upsert_section
 
 from conftest import MY_PID, cli_args, start_mock
@@ -63,6 +65,14 @@ def test_upsert_section(tmp_path):
 def test_summarize_all_runs_pools_files(run_dir):
     md = summarize(run_dir / "omlx", "t", all_runs=True)
     assert "### M1 cached-prefix TTFT" in md
+
+
+def test_select_skips_files_without_a_tag(run_dir, tmp_path):
+    """Core AI's ab-* direct-call files have a provenance header with a suite but no tag."""
+    ab = tmp_path / "ab-coreai-p512-g1024-n5-20261020-092624.jsonl"
+    ab.write_text(json.dumps({"type": "header", "suite": "ab", "created": "2026-10-20T09:26:24"}) + "\n")
+    files = sorted((run_dir / "omlx" / "raw").glob("*.jsonl")) + [ab]
+    assert set(select(files)) == {"t"} and set(select(files, "t")) == {"t"}
 
 
 def test_cap_truncated_streams_count_as_latency_samples():
