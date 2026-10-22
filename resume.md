@@ -3,7 +3,7 @@
 Updated: 2026-10-22 05:43 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-22 05:43): oQ precision study done, PR `bench/precision` open
+## Current state (2026-10-22 05:43): oQ precision study done, PR #13 (`bench/precision`) open
 
 - **Results: [PRECISION.md](PRECISION.md).** The README's oQ bullet now cites them.
   - oQ4 is the only level that loses on agent tasks (Aider 27/36, against 31–33).
