@@ -68,7 +68,7 @@ What an agent user would notice:
 - **oQ4** is only worth it if memory or raw decode speed comes first. It is the only level
   that loses Aider exercises.
 
-The agent benchmark keeps oQ8 until the user picks a level.
+On 2026-10-22 the user chose oQ5, and the agent benchmark now runs on it.
 
 ## Setup
 
@@ -82,6 +82,8 @@ The agent benchmark keeps oQ8 until the user picks a level.
   - oQ5 and oQ6 took about 100 s each on 2026-10-21; oQ4 and oQ8 were converted on 2026-10-19/20.
   - The agent-benchmark session converted its own oQ5 and oQ6. Their sha256 match ours for
     every shard, `config.json` and the index.
+  - Only oQ5 and oQ8 are kept. oQ4, oQ6 and the BF16 source were deleted on 2026-10-22, so
+    re-running another level means downloading BF16 (55.6 GB) and converting again.
 - **Speed.** This repo's harness ran the Tier-3 suites with MTP on:
   - the gate;
   - M1, M3, M4 and M7, with the harness defaults;

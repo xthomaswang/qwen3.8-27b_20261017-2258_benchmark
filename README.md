@@ -54,7 +54,7 @@ All numbers come from quiet, verified runs: the 4-bit columns from Tier-1 and Ti
     - oQ6 passes the token-level gate (KL 0.043) and takes about 9 % longer.
   - **oQ8 + MTP** runs 8-bit weights at the speed of the plain 4-bit row without MTP: 28 GB of
     weights, a 46–47 GiB server, a 72.5 GiB system peak.
-  - The user has not picked a level yet; the agent benchmark keeps oQ8 until then.
+  - The user chose oQ5 on 2026-10-22, and the agent benchmark now runs on it.
 - **Under interference** ([M8.md](M8.md), measured on oQ8 + MTP):
   - 32 GB of memory pressure and heavy disk I/O change nothing for any framework.
   - With half the cores busy, oMLX slows the most (warm TTFT +27 %, against +8–20 % for
