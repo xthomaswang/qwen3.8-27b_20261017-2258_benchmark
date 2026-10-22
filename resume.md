@@ -1,9 +1,35 @@
 # Resume — current progress
 
-Updated: 2026-10-22 05:43 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-22 14:01 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-22 05:43): oQ precision study done, PR #13 (`bench/precision`) open
+## Current state (2026-10-22 14:01): the user chose oQ5; checkpoints trimmed
+
+- **The user chose oQ5.** They approved merging PR #13 once its "keeps oQ8" lines said so;
+  this update does that in PRECISION.md, the README and here.
+  - The agent benchmark (Meta Muse) already runs on oQ5. Its `models/chat` copy is a hard
+    link to our `models/oq/Qwen3.8-27B-oQ5-mtp`.
+- **Checkpoints, each deleted at the user's direction on 2026-10-22:**
+  - BF16 `Qwen/Qwen3.8-27B` (55.6 GB);
+  - our oQ4 and oQ6 conversions, with their `models/hf-bench` links;
+  - `mlx-community/Qwen3.8-27B-8bit` (29.5 GB).
+  - Kept: `models/oq/Qwen3.8-27B-oQ5-mtp` (19 GB) and `models/oq/Qwen3.8-27B-oQ8-mtp`
+    (28 GB, the last oQ8 copy). Deleting the oQ8 waits for the user.
+  - Re-running oQ4, oQ6 or the token-level comparison needs the BF16 download again.
+- **The harness tokenizer** now comes from `$AGENTBENCH_TOKENIZER_DIR`, else the oQ5
+  checkpoint, else an HF snapshot (`harness/src/agentbench/tokenizer.py`).
+  - `agentbench fixtures check` passes with the oQ5 files, and pytest passes.
+  - The official tokenizer differs from mlx-community's only in keeping combining marks
+    inside word pieces.
+- **Recursive Flint, exploratory and local only.** At the user's request, rec 0.1.0 with
+  flint-int4 ran the gate, M1, M3, M4 and M7 on 2026-10-22.
+  - The files are in the gitignored `flint/raw/_unverified/`. They are not published:
+    Flint's thinking cannot be turned off, so there is no like-for-like row.
+  - The agent benchmark runs Flint through its Aider tasks (Hermes, localmelo) under its
+    own lock; the user approved that in its session.
+- **Pending:** the user's call on the last oQ8 copy.
+
+## Previous state (2026-10-22 05:43): oQ precision study done, PR #13 (`bench/precision`) open
 
 - **Results: [PRECISION.md](PRECISION.md).** The README's oQ bullet now cites them.
   - oQ4 is the only level that loses on agent tasks (Aider 27/36, against 31–33).

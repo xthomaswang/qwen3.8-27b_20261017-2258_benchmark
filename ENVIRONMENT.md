@@ -39,3 +39,8 @@ this repo. `scripts/download_models.sh` fetches them.
 | lithos-metal DSpark draft | `LithosAI/Qwen3.8-27B-DSpark-NVFP4` | all | 1.1 GB |
 | Core AI export source | `Qwen/Qwen3.8-27B` (BF16) | all | 55.6 GB |
 | Optional 8-bit reference row | `mlx-community/Qwen3.8-27B-8bit` | already cached | 28 GB |
+
+As of 2026-10-22 none of these are kept locally. The 2026-10-21 cleanup removed the GGUF,
+NVFP4, DSpark and 4-bit repos; BF16 and the 8-bit repo followed on 2026-10-22. What remains
+are this repo's oQ5 and oQ8 conversions in `~/Developer/mlsys/models/oq`
+([PRECISION.md](PRECISION.md)). The harness reads its tokenizer from the oQ5 one.
