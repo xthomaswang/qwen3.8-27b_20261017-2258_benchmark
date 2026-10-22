@@ -1,7 +1,17 @@
 """Local Qwen3.8 tokenizer, chat-template rendering, and image-token arithmetic.
 
-Only the local HF cache snapshot of mlx-community/Qwen3.8-27B-8bit is used
-($HF_HOME/hub/models--mlx-community--Qwen3.8-27B-8bit/snapshots/<hash>/). No network.
+The tokenizer files (tokenizer.json, chat_template.jinja, preprocessor_config.json) come from
+the first of these directories that has all three. No network.
+  1. $AGENTBENCH_TOKENIZER_DIR.
+  2. The oQ5 checkpoint ~/Developer/mlsys/models/oq/Qwen3.8-27B-oQ5-mtp. It was converted from
+     Qwen/Qwen3.8-27B and keeps that repo's tokenizer files unchanged.
+  3. An HF cache snapshot of Qwen/Qwen3.8-27B or mlx-community/Qwen3.8-27B-8bit under $HF_HOME/hub.
+
+The fixtures were generated from mlx-community/Qwen3.8-27B-8bit @ 815b83c0 (manifest.json).
+That snapshot was deleted on 2026-10-22. Rebuilding the fixtures from the oQ5 files gives
+byte-identical output. The two tokenizer.json files differ only in the pre-tokenizer regex: the
+official one keeps combining marks (\\p{M}) inside word pieces. No fixture contains one, and
+neither does any model output recorded in this repo.
 
 Image tokens (Qwen2VLImageProcessorFast, patch_size=16, merge_size=2):
   factor = patch_size * merge_size = 32
@@ -21,16 +31,32 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-REPO_ID = "mlx-community/Qwen3.8-27B-8bit"
+OQ5_DIR = Path.home() / "Developer" / "mlsys" / "models" / "oq" / "Qwen3.8-27B-oQ5-mtp"
+HF_REPOS = ("Qwen/Qwen3.8-27B", "mlx-community/Qwen3.8-27B-8bit")
+FILES = ("tokenizer.json", "chat_template.jinja", "preprocessor_config.json")
+
+
+def _complete(d: Path) -> bool:
+    return all((d / f).exists() for f in FILES)
 
 
 def snapshot_dir() -> Path:
+    """Directory with the tokenizer files, in the order given in the module docstring."""
+    env = os.environ.get("AGENTBENCH_TOKENIZER_DIR")
+    if env:
+        if not _complete(Path(env)):
+            raise FileNotFoundError(f"$AGENTBENCH_TOKENIZER_DIR={env} lacks one of {', '.join(FILES)}")
+        return Path(env)
+    if _complete(OQ5_DIR):
+        return OQ5_DIR
     hf_home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
-    snaps = hf_home / "hub" / ("models--" + REPO_ID.replace("/", "--")) / "snapshots"
-    cands = sorted(p for p in snaps.glob("*") if (p / "tokenizer.json").exists()) if snaps.exists() else []
-    if not cands:
-        raise FileNotFoundError(f"no local snapshot of {REPO_ID} under $HF_HOME/hub")
-    return cands[-1]
+    for repo in HF_REPOS:
+        snaps = hf_home / "hub" / ("models--" + repo.replace("/", "--")) / "snapshots"
+        cands = sorted(p for p in snaps.glob("*") if _complete(p)) if snaps.exists() else []
+        if cands:
+            return cands[-1]
+    raise FileNotFoundError("no local Qwen3.8 tokenizer files: set $AGENTBENCH_TOKENIZER_DIR, or keep the oQ5 "
+                            f"checkpoint or an HF snapshot of {' or '.join(HF_REPOS)}")
 
 
 def smart_resize(height: int, width: int, factor: int = 32, min_pixels: int = 65536,

@@ -1,9 +1,77 @@
 # Resume — current progress
 
-Updated: 2026-10-21 18:10 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-22 14:01 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-21 18:10): oQ precision study scheduled for 23:00
+## Current state (2026-10-22 14:01): the user chose oQ5; checkpoints trimmed
+
+- **The user chose oQ5.** They approved merging PR #13 once its "keeps oQ8" lines said so;
+  this update does that in PRECISION.md, the README and here.
+  - The agent benchmark (Meta Muse) already runs on oQ5. Its `models/chat` copy is a hard
+    link to our `models/oq/Qwen3.8-27B-oQ5-mtp`.
+- **Checkpoints, each deleted at the user's direction on 2026-10-22:**
+  - BF16 `Qwen/Qwen3.8-27B` (55.6 GB);
+  - our oQ4 and oQ6 conversions, with their `models/hf-bench` links;
+  - `mlx-community/Qwen3.8-27B-8bit` (29.5 GB).
+  - Kept: `models/oq/Qwen3.8-27B-oQ5-mtp` (19 GB) and `models/oq/Qwen3.8-27B-oQ8-mtp`
+    (28 GB, the last oQ8 copy). Deleting the oQ8 waits for the user.
+  - Re-running oQ4, oQ6 or the token-level comparison needs the BF16 download again.
+- **The harness tokenizer** now comes from `$AGENTBENCH_TOKENIZER_DIR`, else the oQ5
+  checkpoint, else an HF snapshot (`harness/src/agentbench/tokenizer.py`).
+  - `agentbench fixtures check` passes with the oQ5 files, and pytest passes.
+  - The official tokenizer differs from mlx-community's only in keeping combining marks
+    inside word pieces.
+- **Recursive Flint, exploratory and local only.** At the user's request, rec 0.1.0 with
+  flint-int4 ran the gate, M1, M3, M4 and M7 on 2026-10-22.
+  - The files are in the gitignored `flint/raw/_unverified/`. They are not published:
+    Flint's thinking cannot be turned off, so there is no like-for-like row.
+  - The agent benchmark runs Flint through its Aider tasks (Hermes, localmelo) under its
+    own lock; the user approved that in its session.
+- **Pending:** the user's call on the last oQ8 copy.
+
+## Previous state (2026-10-22 05:43): oQ precision study done, PR #13 (`bench/precision`) open
+
+- **Results: [PRECISION.md](PRECISION.md).** The README's oQ bullet now cites them.
+  - oQ4 is the only level that loses on agent tasks (Aider 27/36, against 31–33).
+  - oQ5, oQ6 and oQ8 cannot be told apart on Aider and screenshots.
+  - oQ5 runs the 20-step trajectory as fast as oQ4.
+  - oQ6 passes the token-level gate.
+  - The user picks the level; the agent benchmark keeps oQ8 until then.
+- **The night (2026-10-21 23:00 to 03:54):**
+  - conv: oQ5 and oQ6, about 100 s each.
+  - gate: oQ5, oQ6.
+  - mtp (M1/M3/M4/M7): oQ4, oQ5, oQ6.
+  - **At 00:35 the user dropped the remaining oQ4/oQ8 steps** ("they were measured before").
+    - I proposed a same-night oQ8 speed run (30 min); the user declined it.
+    - The user also said a cross-night error of about 10 % is acceptable, because differences
+      that small do not matter in real agent use.
+    - So oQ8 comes from Tier-3 (2026-10-20). The cross-night spread, measured on oQ4, is
+      −7 % to +24 % per M3 cell.
+  - A local swap script stopped the first chain in a cool-down after oQ6's mtp step, with no
+    status file written. A second chain then ran:
+    - t1 for oQ6 and oQ5;
+    - M6 for oQ5 and oQ6. oQ6's M6 passed on its third attempt; biomesyncd disturbed the first
+      two.
+  - oQ5's t1 M4 was disturbed on both night attempts (biomesyncd, airportd). It was re-run on
+    2026-10-22 at 05:29, after the agent benchmark released the lock.
+  - The local files are `logs/night-20261021*.sh`, `logs/swap-20261022.sh` and
+    `logs/rerun-20261022.sh`, with their logs.
+- **The agent benchmark (Meta Muse)** measured oQ5/oQ6 answer quality from 03:56 to 05:28:
+  - token KL against BF16;
+  - screenshots, 12 × 5;
+  - Aider, 12 × 3 harnesses.
+
+  It converted its own oQ5/oQ6, whose sha256 match ours per shard. Its oQ4/oQ8 numbers are
+  from 2026-10-21. PRECISION.md cites the numbers, not its local repos.
+- **Pending:**
+  - the user's choice of level;
+  - merging the PR, on the user's go-ahead;
+  - **BF16 `Qwen/Qwen3.8-27B` (55.6 GB).** Meta Muse no longer needs it, so deleting it waits
+    only for the user's explicit OK. Run `hf cache rm model/Qwen/Qwen3.8-27B -y`, then check
+    that no links dangle.
+  - localmelo_main waits for my "done" message before it starts CPU-heavy work.
+
+## Previous state (2026-10-21 18:10): oQ precision study scheduled for 23:00
 
 - **The user's request.** Test oQ5 and oQ6 too, for the full speed and accuracy difference.
   Then open a GitHub PR that reports the differences across precisions. It runs at 23:00

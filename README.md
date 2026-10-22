@@ -43,12 +43,18 @@ All numbers come from quiet, verified runs: the 4-bit columns from Tier-1 and Ti
   go through this harness. Pin the commit, and test again after any oMLX upgrade.
 - **MTP keeps the output.** oMLX verifies drafts with standard speculative sampling, so the
   output keeps the target model's distribution. It also keeps its speed at temperature 1.0.
-- **oQ4 or oQ8.**
-  - oQ4 + MTP is the fastest: 16 GB of weights, a 26–33 GiB server.
-  - oQ8 + MTP runs 8-bit weights at the speed of the plain 4-bit row without MTP: 28 GB of
+- **Which oQ level** ([PRECISION.md](PRECISION.md), measured 2026-10-21/22).
+  - **oQ4 + MTP** is the fastest: 16 GB of weights, a 26–33 GiB server. It is also the only
+    level that loses on agent tasks:
+    - it solves 27 of 36 Aider exercises, against 31–33 at oQ5, oQ6 and oQ8;
+    - it drifts on prose, with token KL 0.216 against BF16.
+  - **oQ5 and oQ6** match oQ8 on Aider and on screenshot reading.
+    - oQ5 runs the 20-step trajectory as fast as oQ4 (171 s against 172 s on the same night),
+      with a 32–36 GiB server.
+    - oQ6 passes the token-level gate (KL 0.043) and takes about 9 % longer.
+  - **oQ8 + MTP** runs 8-bit weights at the speed of the plain 4-bit row without MTP: 28 GB of
     weights, a 46–47 GiB server, a 72.5 GiB system peak.
-  - Answer quality was not compared. M7 tool-call correctness is 24/24 and 23/24, and the
-    one miss is a borderline case.
+  - The user chose oQ5 on 2026-10-22, and the agent benchmark now runs on it.
 - **Under interference** ([M8.md](M8.md), measured on oQ8 + MTP):
   - 32 GB of memory pressure and heavy disk I/O change nothing for any framework.
   - With half the cores busy, oMLX slows the most (warm TTFT +27 %, against +8–20 % for
