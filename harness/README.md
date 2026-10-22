@@ -4,8 +4,11 @@ Benchmark client used unchanged against every server in this experiment. It impl
 gate G1–G5 and the metrics M1–M7 of [../METHODOLOGY.md](../METHODOLOGY.md); see
 [STATUS.md](STATUS.md) for what is verified and what still needs a live check.
 
-Python 3.12, uv project, offline. The tokenizer and chat template come from the local HF
-snapshot `$HF_HOME/hub/models--mlx-community--Qwen3.8-27B-8bit/snapshots/<hash>/`.
+Python 3.12, uv project, offline. The tokenizer and chat template come from a local directory:
+`$AGENTBENCH_TOKENIZER_DIR`, else the oQ5 checkpoint `~/Developer/mlsys/models/oq/Qwen3.8-27B-oQ5-mtp`,
+else an HF snapshot of `Qwen/Qwen3.8-27B` or `mlx-community/Qwen3.8-27B-8bit`. The fixtures were
+built from the 8-bit snapshot, and the oQ5 files rebuild them byte for byte
+(`src/agentbench/tokenizer.py`).
 
 ```bash
 cd harness
@@ -143,7 +146,7 @@ final `summary` line.
 ### `gate` — capability gate G1–G5
 
 ```bash
-uv run agentbench gate --profile omlx --model mlx-community--Qwen3.8-27B-8bit --tag 8bit \
+uv run agentbench gate --profile omlx --model Qwen3.8-27B-oQ5-mtp --tag oq5mtp \
     --framework-version 0.7.1rc1 --launch-flags "<flags>" --server-pid <pid>
 ```
 
@@ -206,7 +209,7 @@ cells that stopped early. Options: `--contexts`, `--caps`, `--think-contexts`, `
 ### `m4` — 20-step trajectory
 
 ```bash
-uv run agentbench m4 --profile omlx --model mlx-community--Qwen3.8-27B-8bit --tag 8bit --runs 3
+uv run agentbench m4 --profile omlx --model Qwen3.8-27B-oQ5-mtp --tag oq5mtp --runs 3
 ```
 
 Step 0 = prefix + task; step k appends canned call k, tool result k and screenshot k
