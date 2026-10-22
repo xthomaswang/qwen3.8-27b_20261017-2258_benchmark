@@ -1077,3 +1077,713 @@ TTFT slope over steps 1-20: -0.1073 s/step (steps 2-20: 0.0684 s/step); total e2
 
 25 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
 <!-- agentbench:end summary oq4mtp-spec-off-t1 -->
+
+<!-- agentbench:begin summary oq5mtp-mtp-on-prec -->
+## Results, tag `oq5mtp-mtp-on-prec`
+
+### Gate G1-G5
+
+Source: `raw/gate-oq5mtp-mtp-on-prec-20261021-230952.jsonl`.
+
+| ID | Requirement | Result | Detail |
+| --- | --- | --- | --- |
+| G1 | OpenAI chat completions + SSE + Qwen3.8 tool calls | **PASS** | fs_read_file {"path": "docs/setup.md"}; one delta; first call chunk at 0.83 s, e2e 0.83 s; finish=tool_calls |
+| G2 | Image input (base64 PNG image_url), code read back | **PASS** | read Y3N-9JT correctly; prompt_tokens=1319 |
+| G2b | Image inside a tool result (role=tool image_url, Hermes path), code read back | **FAIL** | tool-message image: code not read (answer "I'm sorry, but I can't help with that. I", expected Y3N-9JT); prompt_tokens=639; image dropped: 1297 fewer prompt tokens than the control; control (user message): read Y3N-9JT; prompt_tokens=1936 |
+| G3 | Anthropic /v1/messages: text, tool_use, image, image in tool_result | **PASS** | text ok, tool_use ok, image ok, tool_result image ok; text ok ('ready'); reasoning 56 chars in thinking_block / text ok ('ready'); reasoning 110 chars in thinking_block |
+| G4 | Thinking control (enable_thinking / reasoning_effort) | **PASS** | Hermes off: no reasoning; Hermes on: reasoning 45 chars in reasoning_content; note: reasoning_effort=none alone does not disable thinking (top-level effort ignored) \| G4.effort-none-only: accepted; reasoning 117 chars in reasoning_content \| G4.effort-high: accepted; reasoning 146 chars in reasoning_content \| G4.effort-minimal: accepted; reasoning 117 chars in reasoning_content \| G4.default: accepted; reasoning 146 chars in reasoning_content |
+| G5 | Context >= 64K: a 64,000-token prompt completes | **PASS** | 64000-token prompt completed: prompt_tokens=64000, TTFT 120.6 s; configured context: 131072; peak server footprint 29.0 GiB |
+
+### M1 cached-prefix TTFT
+
+Source: `raw/m1-oq5mtp-mtp-on-prec-20261021-235148.jsonl`.
+
+| Phase | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | first chunk | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 5 | 3.163 (2.593-3.268) | 5.138 (4.438-5.240) | 14996 | 16644 | content | 0 |
+| cold | 3 | 24.976 (23.995-25.415) | 26.741 (25.531-27.305) | 0 | 16659 | content | 0 |
+
+Cold / warm TTFT (medians): 7.90x.
+
+### M3 short structured decode
+
+Source: `raw/m3-oq5mtp-mtp-on-prec-20261021-235352.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| on | off | 16,000 | 50 | 3 | 58.5 (56.1-64.8) | 0.324 (0.312-0.505) | 1.198 (1.151-1.261) | 50 | 3/3 | 133.8 | 195.2 | 7.14 |
+| on | off | 16,000 | 150 | 3 | 59.8 (58.8-60.9) | 0.318 (0.317-0.319) | 2.809 (2.766-2.854) | 150 | 3/3 | 139.0 | 200.1 | 7.89 |
+| on | off | 16,000 | 300 | 3 | 61.9 (61.8-62.3) | 0.316 (0.313-0.318) | 5.144 (5.122-5.158) | 300 | 3/3 | 134.4 | 182.4 | 8.11 |
+| on | off | 32,000 | 50 | 3 | 53.8 (51.2-59.3) | 0.467 (0.465-0.880) | 1.423 (1.378-1.707) | 50 | 3/3 | 135.7 | 225.7 | 6.25 |
+| on | off | 32,000 | 150 | 3 | 43.3 (41.6-45.1) | 0.462 (0.460-0.463) | 3.903 (3.767-4.044) | 150 | 3/3 | 162.9 | 238.6 | 6.82 |
+| on | off | 32,000 | 300 | 3 | 45.2 (44.7-47.8) | 0.462 (0.461-0.471) | 7.089 (6.715-7.144) | 300 | 3/3 | 163.2 | 255.8 | 7.50 |
+| on | off | 64,000 | 50 | 3 | 44.5 (43.6-50.8) | 0.785 (0.769-1.522) | 1.910 (1.871-2.488) | 50 | 3/3 | 156.3 | 201.6 | 6.25 |
+| on | off | 64,000 | 150 | 3 | 42.9 (42.8-43.0) | 0.774 (0.767-0.774) | 4.246 (4.235-4.260) | 150 | 3/3 | 190.2 | 284.1 | 7.50 |
+| on | off | 64,000 | 300 | 3 | 41.5 (41.2-42.9) | 0.771 (0.769-0.779) | 7.972 (7.745-8.035) | 300 | 3/3 | 187.4 | 286.4 | 7.32 |
+| on | on | 16,000 | 1000 | 3 | 32.9 (30.9-33.5) | 3.174 (3.154-3.325) | 33.549 (33.149-35.478) | 1000 | 3/3 | 132.8 | 230.1 | 4.50 |
+| on | on | 16,000 | 2000 | 3 | 42.3 (38.9-42.5) | 3.107 (3.086-3.141) | 50.374 (50.112-54.571) | 2000 | 3/3 | 142.2 | 222.1 | 6.19 |
+| on | on | 32,000 | 1000 | 3 | 35.7 (33.1-37.7) | 2.816 (2.773-3.096) | 30.790 (29.244-33.282) | 1000 | 3/3 | 145.7 | 224.4 | 5.05 |
+| on | on | 32,000 | 2000 | 3 | 39.2 (38.7-42.2) | 2.776 (2.766-2.784) | 53.807 (50.180-54.463) | 2000 | 3/3 | 146.0 | 224.1 | 5.88 |
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-oq5mtp-mtp-on-prec-20261022-000934.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 21.522 (21.261-21.787) | 23.715 (23.164-23.965) | 0 | 15084 | 0.00 | 0 |
+| 1 | 3 | 15.785 (7.438-15.865) | 18.742 (10.343-18.816) | 6144 | 16787 | 0.37 | 0 |
+| 2 | 3 | 3.257 (3.254-3.489) | 7.054 (6.744-7.089) | - | 18439 | - | 0 |
+| 3 | 3 | 3.184 (3.151-3.437) | 5.365 (5.308-5.805) | 18486 | 20194 | 0.92 | 0 |
+| 4 | 3 | 3.307 (3.294-3.552) | 7.008 (6.918-7.195) | - | 21838 | - | 0 |
+| 5 | 3 | 3.468 (3.467-3.696) | 5.477 (5.445-5.787) | 21885 | 23619 | 0.93 | 0 |
+| 6 | 3 | 3.559 (3.509-3.729) | 5.417 (5.084-6.076) | 23612 | 25318 | 0.93 | 0 |
+| 7 | 3 | 3.506 (3.474-3.693) | 6.145 (6.023-7.187) | 25311 | 27004 | 0.94 | 0 |
+| 8 | 3 | 3.671 (3.651-3.887) | 6.458 (5.929-6.521) | 26997 | 28714 | 0.94 | 0 |
+| 9 | 3 | 3.583 (3.544-3.815) | 6.679 (6.613-6.839) | 28707 | 30421 | 0.94 | 0 |
+| 10 | 3 | 3.661 (3.654-3.900) | 7.390 (7.261-7.598) | - | 32060 | - | 0 |
+| 11 | 3 | 3.854 (3.849-4.093) | 6.703 (6.573-6.708) | - | 33769 | - | 0 |
+| 12 | 3 | 3.874 (3.871-4.114) | 6.307 (5.758-6.510) | 33816 | 35535 | 0.95 | 0 |
+| 13 | 3 | 3.921 (3.900-4.100) | 7.607 (7.549-7.621) | - | 37191 | - | 0 |
+| 14 | 3 | 4.075 (4.074-4.316) | 6.095 (6.058-6.239) | 37238 | 38960 | 0.96 | 0 |
+| 15 | 3 | 3.971 (3.965-4.216) | 7.033 (6.400-7.307) | 38953 | 40666 | 0.96 | 0 |
+| 16 | 3 | 4.093 (4.066-4.316) | 6.457 (6.355-6.673) | 40659 | 42359 | 0.96 | 0 |
+| 17 | 3 | 4.285 (4.282-4.498) | 6.979 (6.865-7.026) | 42352 | 44063 | 0.96 | 0 |
+| 18 | 3 | 4.201 (4.196-4.432) | 8.337 (8.302-8.526) | - | 45696 | - | 0 |
+| 19 | 3 | 4.391 (4.385-4.610) | 8.538 (8.451-8.702) | - | 47383 | - | 0 |
+| 20 | 3 | 4.342 (4.334-4.581) | 8.663 (8.591-8.666) | 47430 | 49151 | 0.96 | 0 |
+
+TTFT slope over steps 1-20: -0.1153 s/step (steps 2-20: 0.0653 s/step); total e2e per run: 164.1, 173.9, 170.8 s.
+
+23 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
+
+### M6 memory and stability
+
+Source: `raw/m6-oq5mtp-mtp-on-prec-20261022-014327.jsonl`.
+
+| Metric | Value |
+| --- | --- |
+| footprint at 64,000 tokens: server tree peak GiB | 32.00 |
+| footprint: system used peak GiB | 51.79 |
+| loop minutes / runs (complete) / requests | 30.0 / 11 (10) / 212 |
+| errors | 80 |
+| server tree GiB start / peak / end | 32.00 / 36.00 / 28.00 |
+| server tree growth GiB | -4.00 |
+| system used GiB start / end | 51.80 / 47.90 |
+| e2e last run / first run (median per step) | 1.03 |
+| e2e s over all requests | 6.591 (5.033-24.638) |
+
+### M7 tool-call correctness
+
+Source: `raw/m7-oq5mtp-mtp-on-prec-20261022-001822.jsonl`.
+
+Passed 23/24.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary oq5mtp-mtp-on-prec -->
+
+<!-- agentbench:begin summary oq6mtp-mtp-on-prec -->
+## Results, tag `oq6mtp-mtp-on-prec`
+
+### Gate G1-G5
+
+Source: `raw/gate-oq6mtp-mtp-on-prec-20261021-231538.jsonl`.
+
+| ID | Requirement | Result | Detail |
+| --- | --- | --- | --- |
+| G1 | OpenAI chat completions + SSE + Qwen3.8 tool calls | **PASS** | fs_read_file {"path": "docs/setup.md"}; one delta; first call chunk at 20.67 s, e2e 20.67 s; finish=tool_calls |
+| G2 | Image input (base64 PNG image_url), code read back | **PASS** | read Y3N-9JT correctly; prompt_tokens=1319 |
+| G2b | Image inside a tool result (role=tool image_url, Hermes path), code read back | **FAIL** | tool-message image: code not read (answer "I'm sorry, but I can't help with that. I", expected Y3N-9JT); prompt_tokens=639; image dropped: 1297 fewer prompt tokens than the control; control (user message): read Y3N-9JT; prompt_tokens=1936 |
+| G3 | Anthropic /v1/messages: text, tool_use, image, image in tool_result | **PASS** | text ok, tool_use ok, image ok, tool_result image ok; text ok ('ready'); reasoning 114 chars in thinking_block / text ok ('ready'); reasoning 115 chars in thinking_block |
+| G4 | Thinking control (enable_thinking / reasoning_effort) | **PASS** | Hermes off: no reasoning; Hermes on: reasoning 117 chars in reasoning_content; note: reasoning_effort=none alone does not disable thinking (top-level effort ignored) \| G4.effort-none-only: accepted; reasoning 117 chars in reasoning_content \| G4.effort-high: accepted; reasoning 131 chars in reasoning_content \| G4.effort-minimal: accepted; reasoning 117 chars in reasoning_content \| G4.default: accepted; reasoning 131 chars in reasoning_content |
+| G5 | Context >= 64K: a 64,000-token prompt completes | **PASS** | 64000-token prompt completed: prompt_tokens=64000, TTFT 114.6 s; configured context: 131072; peak server footprint 33.0 GiB |
+
+### M1 cached-prefix TTFT
+
+Source: `raw/m1-oq6mtp-mtp-on-prec-20261022-002231.jsonl`.
+
+| Phase | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | first chunk | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 5 | 3.217 (2.633-3.308) | 5.397 (4.758-5.631) | 14996 | 16644 | content | 0 |
+| cold | 3 | 26.825 (24.537-27.877) | 28.904 (26.348-30.063) | 0 | 16659 | content | 0 |
+
+Cold / warm TTFT (medians): 8.34x.
+
+### M3 short structured decode
+
+Source: `raw/m3-oq6mtp-mtp-on-prec-20261022-002436.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| on | off | 16,000 | 50 | 3 | 52.6 (46.3-59.6) | 0.344 (0.325-0.523) | 1.346 (1.258-1.403) | 50 | 3/3 | 140.6 | 229.2 | 7.14 |
+| on | off | 16,000 | 150 | 3 | 48.4 (46.6-48.6) | 0.342 (0.333-0.351) | 3.420 (3.397-3.546) | 150 | 3/3 | 153.9 | 223.3 | 7.14 |
+| on | off | 16,000 | 300 | 3 | 51.8 (50.7-51.9) | 0.332 (0.330-0.334) | 6.107 (6.092-6.236) | 300 | 3/3 | 151.8 | 236.6 | 7.50 |
+| on | off | 32,000 | 50 | 3 | 49.3 (47.6-53.3) | 0.478 (0.476-0.867) | 1.505 (1.473-1.787) | 50 | 3/3 | 148.9 | 244.1 | 6.25 |
+| on | off | 32,000 | 150 | 3 | 44.0 (42.3-44.9) | 0.469 (0.468-0.479) | 3.853 (3.785-4.003) | 150 | 3/3 | 165.1 | 238.4 | 7.14 |
+| on | off | 32,000 | 300 | 3 | 44.7 (44.6-45.7) | 0.470 (0.467-0.476) | 7.160 (7.008-7.174) | 300 | 3/3 | 169.0 | 248.7 | 7.32 |
+| on | off | 64,000 | 50 | 3 | 44.1 (42.9-47.5) | 0.765 (0.751-1.517) | 1.909 (1.864-2.551) | 50 | 3/3 | 132.5 | 199.3 | 5.56 |
+| on | off | 64,000 | 150 | 3 | 41.2 (40.3-41.3) | 0.756 (0.754-0.761) | 4.371 (4.366-4.459) | 150 | 3/3 | 145.6 | 280.4 | 6.00 |
+| on | off | 64,000 | 300 | 3 | 39.4 (39.2-40.7) | 0.763 (0.762-0.764) | 8.350 (8.119-8.382) | 300 | 3/3 | 190.7 | 293.8 | 6.82 |
+| on | on | 16,000 | 1000 | 3 | 31.6 (31.3-33.7) | 3.117 (3.092-3.214) | 34.849 (32.725-35.074) | 1000 | 3/3 | 129.6 | 224.2 | 4.61 |
+| on | on | 16,000 | 2000 | 3 | 37.8 (30.4-39.3) | 3.103 (3.083-3.161) | 56.116 (53.999-68.968) | 2000 | 3/3 | 131.1 | 229.5 | 5.21 |
+| on | on | 32,000 | 1000 | 3 | 33.4 (31.3-34.0) | 2.917 (2.883-3.233) | 32.786 (32.280-35.105) | 1000 | 3/3 | 155.5 | 257.1 | 5.43 |
+| on | on | 32,000 | 2000 | 3 | 34.0 (32.6-34.2) | 2.853 (2.778-2.857) | 61.716 (61.223-64.231) | 2000 | 3/3 | 152.8 | 253.9 | 5.45 |
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-oq6mtp-mtp-on-prec-20261022-004123.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 22.350 (21.888-22.826) | 24.678 (24.218-25.133) | 0 | 15084 | 0.00 | 0 |
+| 1 | 3 | 16.302 (7.602-16.519) | 19.839 (10.986-20.177) | 6144 | 16787 | 0.37 | 0 |
+| 2 | 3 | 3.356 (3.313-3.551) | 7.697 (7.461-7.799) | - | 18439 | - | 0 |
+| 3 | 3 | 3.435 (3.300-3.516) | 5.971 (5.647-6.089) | 18486 | 20194 | 0.92 | 0 |
+| 4 | 3 | 3.452 (3.427-3.636) | 7.888 (7.873-7.978) | 20187 | 21838 | 0.92 | 0 |
+| 5 | 3 | 3.625 (3.585-3.782) | 6.265 (6.221-6.391) | 21885 | 23619 | 0.93 | 0 |
+| 6 | 3 | 3.585 (3.585-3.793) | 6.025 (5.975-7.100) | 23612 | 25318 | 0.93 | 0 |
+| 7 | 3 | 3.561 (3.530-3.771) | 5.932 (5.920-6.460) | 25311 | 27004 | 0.94 | 0 |
+| 8 | 3 | 3.826 (3.795-4.004) | 7.501 (6.920-7.729) | 26997 | 28714 | 0.94 | 0 |
+| 9 | 3 | 3.678 (3.638-3.843) | 6.859 (6.699-7.030) | 28707 | 30421 | 0.94 | 0 |
+| 10 | 3 | 3.797 (3.783-4.033) | 8.221 (8.184-8.391) | - | 32060 | - | 0 |
+| 11 | 3 | 4.010 (3.989-4.193) | 7.908 (7.880-7.996) | - | 33769 | - | 0 |
+| 12 | 3 | 3.980 (3.954-4.161) | 6.286 (6.245-6.376) | 33816 | 35535 | 0.95 | 0 |
+| 13 | 3 | 4.062 (4.037-4.224) | 8.723 (8.352-8.769) | - | 37191 | - | 0 |
+| 14 | 3 | 4.269 (4.220-4.427) | 6.409 (6.374-6.511) | 37238 | 38960 | 0.96 | 0 |
+| 15 | 3 | 4.144 (4.092-4.311) | 7.068 (6.867-7.107) | 38953 | 40666 | 0.96 | 0 |
+| 16 | 3 | 4.262 (4.257-4.442) | 6.949 (6.865-7.007) | 40659 | 42359 | 0.96 | 0 |
+| 17 | 3 | 4.449 (4.404-4.651) | 8.852 (8.817-8.995) | 42352 | 44009 | 0.96 | 0 |
+| 18 | 3 | 4.356 (4.326-4.581) | 8.976 (8.696-9.030) | - | 45696 | - | 0 |
+| 19 | 3 | 4.625 (4.507-4.814) | 8.831 (8.741-8.925) | - | 47383 | - | 0 |
+| 20 | 3 | 4.520 (4.451-4.704) | 9.270 (9.042-9.621) | 47430 | 49151 | 0.96 | 0 |
+
+TTFT slope over steps 1-20: -0.1174 s/step (steps 2-20: 0.0689 s/step); total e2e per run: 176.5, 187.7, 186.6 s.
+
+23 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
+
+### M6 memory and stability
+
+Source: `raw/m6-oq6mtp-mtp-on-prec-20261022-032243.jsonl`.
+
+| Metric | Value |
+| --- | --- |
+| footprint at 64,000 tokens: server tree peak GiB | 39.00 |
+| footprint: system used peak GiB | 58.99 |
+| loop minutes / runs (complete) / requests | 30.0 / 10 (9) / 199 |
+| errors | 76 |
+| server tree GiB start / peak / end | 39.00 / 40.00 / 34.00 |
+| server tree growth GiB | -5.00 |
+| system used GiB start / end | 59.00 / 53.70 |
+| e2e last run / first run (median per step) | 1.02 |
+| e2e s over all requests | 6.858 (5.748-25.291) |
+
+### M7 tool-call correctness
+
+Source: `raw/m7-oq6mtp-mtp-on-prec-20261022-005047.jsonl`.
+
+Passed 23/24.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary oq6mtp-mtp-on-prec -->
+
+<!-- agentbench:begin summary oq4mtp-mtp-on-prec -->
+## Results, tag `oq4mtp-mtp-on-prec`
+
+### M1 cached-prefix TTFT
+
+Source: `raw/m1-oq4mtp-mtp-on-prec-20261021-232158.jsonl`.
+
+| Phase | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | first chunk | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 5 | 3.096 (3.062-9.117) | 4.809 (4.633-11.422) | 14996 | 16644 | content | 0 |
+| cold | 3 | 23.896 (23.043-24.251) | 25.260 (24.586-25.814) | 0 | 16659 | content | 0 |
+
+Cold / warm TTFT (medians): 7.72x.
+
+### M3 short structured decode
+
+Source: `raw/m3-oq4mtp-mtp-on-prec-20261021-232414.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| on | off | 16,000 | 50 | 3 | 71.4 (70.0-73.4) | 0.287 (0.286-0.475) | 0.988 (0.973-1.143) | 50 | 3/3 | 111.3 | 178.6 | 7.14 |
+| on | off | 16,000 | 150 | 3 | 75.8 (74.9-77.2) | 0.300 (0.292-0.304) | 2.266 (2.223-2.294) | 150 | 3/3 | 113.8 | 175.0 | 8.33 |
+| on | off | 16,000 | 300 | 3 | 75.7 (75.5-77.7) | 0.290 (0.288-0.296) | 4.243 (4.144-4.250) | 300 | 3/3 | 116.6 | 178.9 | 8.57 |
+| on | off | 32,000 | 50 | 3 | 61.4 (58.1-65.9) | 0.431 (0.423-0.828) | 1.275 (1.221-1.573) | 50 | 3/3 | 127.1 | 189.6 | 6.25 |
+| on | off | 32,000 | 150 | 3 | 54.4 (52.6-54.5) | 0.429 (0.428-0.429) | 3.170 (3.161-3.260) | 150 | 3/3 | 139.1 | 209.9 | 7.50 |
+| on | off | 32,000 | 300 | 3 | 53.3 (51.8-53.5) | 0.430 (0.428-0.432) | 6.045 (6.015-6.206) | 300 | 3/3 | 139.6 | 212.6 | 7.69 |
+| on | off | 64,000 | 50 | 3 | 46.3 (44.1-51.8) | 0.733 (0.730-1.456) | 1.844 (1.789-2.403) | 50 | 3/3 | 138.5 | 234.6 | 6.25 |
+| on | off | 64,000 | 150 | 3 | 48.7 (48.6-49.6) | 0.725 (0.720-0.727) | 3.781 (3.731-3.790) | 150 | 3/3 | 169.7 | 246.8 | 7.50 |
+| on | off | 64,000 | 300 | 3 | 46.4 (44.9-46.9) | 0.742 (0.725-0.789) | 7.170 (7.112-7.451) | 300 | 3/3 | 168.7 | 250.9 | 7.50 |
+| on | on | 16,000 | 1000 | 3 | 41.0 (40.9-43.6) | 3.048 (3.047-3.207) | 27.428 (26.105-27.484) | 1000 | 3/3 | 127.8 | 194.0 | 5.78 |
+| on | on | 16,000 | 2000 | 3 | 44.8 (41.9-66.8) | 3.020 (2.974-3.037) | 47.630 (32.963-50.670) | 2000 | 3/3 | 127.0 | 193.5 | 6.33 |
+| on | on | 32,000 | 1000 | 3 | 36.7 (35.7-42.8) | 2.789 (2.782-3.076) | 29.978 (26.430-30.781) | 1000 | 3/3 | 132.3 | 205.9 | 5.38 |
+| on | on | 32,000 | 2000 | 3 | 42.2 (40.0-42.5) | 2.788 (2.784-2.795) | 50.124 (49.771-52.790) | 2000 | 3/3 | 133.5 | 203.1 | 6.23 |
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-oq4mtp-mtp-on-prec-20261021-233840.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 21.608 (21.151-22.442) | 22.969 (22.438-23.809) | 0 | 15084 | 0.00 | 0 |
+| 1 | 3 | 16.535 (7.384-17.118) | 19.407 (10.036-19.834) | - | 16733 | - | 0 |
+| 2 | 3 | 3.367 (3.254-3.472) | 6.835 (6.758-6.842) | - | 18439 | - | 0 |
+| 3 | 3 | 3.299 (3.252-3.427) | 5.237 (4.957-5.456) | 18486 | 20194 | 0.92 | 0 |
+| 4 | 3 | 3.417 (3.391-3.493) | 6.269 (6.198-6.689) | 20187 | 21892 | 0.92 | 0 |
+| 5 | 3 | 3.544 (3.528-3.696) | 5.734 (5.713-5.906) | 21885 | 23619 | 0.93 | 0 |
+| 6 | 3 | 3.525 (3.471-3.656) | 4.926 (4.843-4.991) | 23612 | 25318 | 0.93 | 0 |
+| 7 | 3 | 3.689 (3.653-3.695) | 6.491 (6.008-7.629) | 25311 | 27004 | 0.94 | 0 |
+| 8 | 3 | 3.833 (3.817-3.863) | 6.408 (6.215-6.476) | 26997 | 28714 | 0.94 | 0 |
+| 9 | 3 | 3.707 (3.701-3.770) | 6.118 (6.012-6.173) | 28707 | 30421 | 0.94 | 0 |
+| 10 | 3 | 3.840 (3.710-3.873) | 7.456 (7.382-7.730) | - | 32060 | - | 0 |
+| 11 | 3 | 4.064 (3.962-4.066) | 6.679 (6.679-6.744) | - | 33769 | - | 0 |
+| 12 | 3 | 4.031 (4.007-4.070) | 7.031 (6.683-7.032) | 33816 | 35535 | 0.95 | 0 |
+| 13 | 3 | 4.125 (4.059-4.141) | 8.028 (7.753-8.382) | - | 37191 | - | 0 |
+| 14 | 3 | 4.317 (4.312-4.419) | 5.953 (5.870-6.859) | 37238 | 38960 | 0.96 | 0 |
+| 15 | 3 | 4.160 (4.116-4.207) | 6.285 (6.238-6.374) | 38953 | 40666 | 0.96 | 0 |
+| 16 | 3 | 4.262 (4.225-4.334) | 6.494 (6.490-6.668) | 40659 | 42359 | 0.96 | 0 |
+| 17 | 3 | 4.426 (4.400-4.533) | 6.874 (6.844-7.483) | 42352 | 44063 | 0.96 | 0 |
+| 18 | 3 | 4.353 (4.310-4.469) | 7.935 (7.885-8.130) | - | 45696 | - | 0 |
+| 19 | 3 | 4.632 (4.486-4.732) | 8.164 (8.057-8.554) | - | 47383 | - | 0 |
+| 20 | 3 | 4.551 (4.524-4.804) | 9.229 (8.999-9.329) | 47430 | 49151 | 0.96 | 0 |
+
+TTFT slope over steps 1-20: -0.1178 s/step (steps 2-20: 0.0723 s/step); total e2e per run: 159.5, 172.2, 174.0 s.
+
+23 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
+
+### M7 tool-call correctness
+
+Source: `raw/m7-oq4mtp-mtp-on-prec-20261021-234741.jsonl`.
+
+Passed 24/24.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | pass | - |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary oq4mtp-mtp-on-prec -->
+
+<!-- agentbench:begin summary oq6mtp-mtp-on-t1-prec -->
+## Results, tag `oq6mtp-mtp-on-t1-prec`
+
+### M3 short structured decode
+
+Source: `raw/m3-oq6mtp-mtp-on-t1-prec-20261022-005307.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| on | off | 16,000 | 150 | 3 | 54.8 (48.9-57.4) | 0.320 (0.316-0.323) | 3.041 (2.912-3.373) | 150 | 3/3 | 126.4 | 194.9 | 6.82 |
+| on | off | 32,000 | 150 | 3 | 44.7 (40.2-47.7) | 0.457 (0.456-0.466) | 3.788 (3.578-4.176) | 150 | 3/3 | 146.9 | 224.8 | 6.52 |
+| on | on | 16,000 | 1000 | 3 | 38.6 (31.8-45.4) | 3.006 (2.981-3.029) | 28.933 (24.999-34.373) | 1000 | 3/3 | 133.8 | 226.0 | 5.49 |
+| on | on | 32,000 | 1000 | 3 | 35.8 (32.0-36.3) | 2.767 (2.750-2.832) | 30.676 (30.272-34.050) | 1000 | 3/3 | 147.3 | 244.1 | 5.43 |
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-oq6mtp-mtp-on-t1-prec-20261022-005749.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 22.409 (22.330-22.726) | 24.836 (24.504-25.129) | 0 | 15030 | 0.00 | 0 |
+| 1 | 3 | 16.374 (16.290-19.448) | 19.797 (18.447-22.487) | 6144 | 16787 | 0.37 | 0 |
+| 2 | 3 | 3.335 (3.335-4.254) | 6.173 (5.988-7.579) | 16780 | 18493 | 0.91 | 0 |
+| 3 | 3 | 3.308 (3.267-4.383) | 6.189 (4.384-7.184) | 18486 | 20194 | 0.92 | 0 |
+| 4 | 3 | 3.365 (3.364-3.406) | 7.467 (6.957-7.578) | 20187 | 21838 | 0.92 | 0 |
+| 5 | 3 | 3.576 (3.553-3.593) | 6.172 (6.071-7.352) | 21885 | 23619 | 0.93 | 0 |
+| 6 | 3 | 3.583 (3.575-3.643) | 6.843 (5.601-7.222) | 23612 | 25318 | 0.93 | 0 |
+| 7 | 3 | 3.570 (3.544-3.573) | 6.948 (6.507-8.084) | 25311 | 27004 | 0.94 | 0 |
+| 8 | 3 | 3.772 (3.763-3.823) | 7.267 (7.012-7.642) | 26997 | 28714 | 0.94 | 0 |
+| 9 | 3 | 3.649 (3.637-3.689) | 6.945 (6.318-7.466) | 28707 | 30421 | 0.94 | 0 |
+| 10 | 3 | 3.772 (3.700-3.849) | 7.894 (6.772-8.135) | 30414 | 32060 | 0.95 | 0 |
+| 11 | 3 | 3.974 (3.931-4.049) | 7.793 (7.750-7.995) | - | 33769 | - | 0 |
+| 12 | 3 | 3.965 (3.922-4.018) | 8.217 (7.407-8.242) | 33816 | 35535 | 0.95 | 0 |
+| 13 | 3 | 4.009 (3.977-4.066) | 8.436 (7.967-8.625) | - | 37191 | - | 0 |
+| 14 | 3 | 4.263 (4.217-4.283) | 6.952 (6.043-7.270) | 37238 | 38960 | 0.96 | 0 |
+| 15 | 3 | 4.116 (4.041-4.159) | 7.199 (6.903-7.251) | 38953 | 40666 | 0.96 | 0 |
+| 16 | 3 | 4.224 (4.181-4.256) | 7.137 (6.493-7.476) | 40659 | 42359 | 0.96 | 0 |
+| 17 | 2 | 4.463 (4.439-4.488) | 7.865 (7.595-8.134) | 42352 | 44063 | 0.96 | 1 |
+| 18 | 3 | 4.347 (4.314-4.405) | 8.007 (7.024-9.202) | 44056 | 45696 | 0.96 | 0 |
+| 19 | 3 | 4.557 (4.500-4.563) | 9.049 (8.952-9.698) | - | 47383 | - | 0 |
+| 20 | 3 | 4.497 (4.426-4.516) | 9.665 (9.313-9.757) | 47430 | 49151 | 0.96 | 0 |
+
+TTFT slope over steps 1-20: -0.1172 s/step (steps 2-20: 0.0709 s/step); total e2e per run: 188.5, 184.1, 189.0 s.
+
+24 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
+
+### M7 tool-call correctness
+
+Source: `raw/m7-oq6mtp-mtp-on-t1-prec-20261022-010724.jsonl`.
+
+Passed 103/120.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | **FAIL** | http_request.json_body: expected {'name': 'nightly-build', 'retries': 3, 'notify': {'on_failure': True, 'channel': 'builds'}}, got {'channel': 'builds', 'name': 'nightly-build', 'notify': {'on_failure': True}, 'retries': 3} |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | **FAIL** | called 'shell_run' instead of 'fs_delete' |
+| m7-05-array-strings | arrays | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-05-array-strings | arrays | **FAIL** | called 'fs_read_file' instead of 'fs_delete'; spurious extra call(s): expected 1, got 2 |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-07-enum | enums | **FAIL** | called 'computer_screenshot' instead of 'window_arrange' |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-08-key-combo | enums / arrays | **FAIL** | called 'window_list' instead of 'computer_key_press' |
+| m7-08-key-combo | enums / arrays | **FAIL** | called 'window_list' instead of 'computer_key_press' |
+| m7-08-key-combo | enums / arrays | **FAIL** | called 'computer_screenshot' instead of 'computer_key_press' |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | **FAIL** | called 'computer_screenshot' instead of 'computer_type_text' |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | **FAIL** | called 'computer_screenshot' instead of 'computer_type_text' |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | **FAIL** | called 'git_diff' instead of 'git_commit' |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | **FAIL** | called 'fs_read_file' instead of 'fs_write_file' |
+| m7-17-long-string | long string args | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-17-long-string | long string args | **FAIL** | called 'fs_read_file' instead of 'fs_write_file' |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | **FAIL** | fs_read_file.path: expected '/workspace/demo-app/data/dal-plibry-55.csv' to end with 'dal-pribry-55.csv' |
+| m7-22-image-read | call after an image | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary oq6mtp-mtp-on-t1-prec -->
+
+<!-- agentbench:begin summary oq5mtp-mtp-on-t1-prec -->
+## Results, tag `oq5mtp-mtp-on-t1-prec`
+
+### M3 short structured decode
+
+Source: `raw/m3-oq5mtp-mtp-on-t1-prec-20261022-011410.jsonl`.
+
+| spec | thinking | context | cap | n | decode tok/s | TTFT s | e2e s | out tok (med) | hit cap | gap p50 ms | gap p99 ms | tok/chunk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| on | off | 16,000 | 150 | 3 | 58.5 (58.0-61.8) | 0.306 (0.301-0.306) | 2.855 (2.712-2.875) | 150 | 3/3 | 112.7 | 168.8 | 6.82 |
+| on | off | 32,000 | 150 | 3 | 50.8 (50.5-54.7) | 0.448 (0.445-0.452) | 3.378 (3.171-3.401) | 150 | 3/3 | 130.4 | 194.3 | 6.82 |
+| on | on | 16,000 | 1000 | 3 | 37.5 (35.5-39.4) | 3.079 (2.904-3.102) | 29.747 (28.437-31.029) | 1000 | 3/3 | 136.1 | 209.4 | 5.71 |
+| on | on | 32,000 | 1000 | 3 | 37.7 (31.8-38.0) | 2.673 (2.639-2.724) | 29.126 (28.988-34.106) | 1000 | 3/3 | 135.3 | 208.8 | 5.49 |
+
+### M4 20-step trajectory (per step)
+
+Source: `raw/m4-oq5mtp-mtp-on-t1-prec-20261022-053024.jsonl`.
+
+| Step | n | TTFT s | e2e s | cached tok (med) | prompt tok (med) | cached share | errors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 (start) | 3 | 21.725 (19.846-22.684) | 23.459 (21.864-24.131) | 0 | 15084 | 0.00 | 0 |
+| 1 | 3 | 16.036 (15.673-19.433) | 17.626 (17.498-20.309) | 6144 | 16787 | 0.37 | 0 |
+| 2 | 3 | 3.352 (3.315-3.942) | 6.807 (4.353-7.098) | 16780 | 18493 | 0.91 | 0 |
+| 3 | 3 | 3.255 (3.165-3.332) | 6.576 (5.681-6.818) | 18486 | 20140 | 0.92 | 0 |
+| 4 | 3 | 4.206 (3.380-4.691) | 4.692 (4.207-7.673) | 20187 | 21892 | 0.92 | 0 |
+| 5 | 3 | 3.565 (3.539-3.601) | 5.992 (5.482-6.417) | 21885 | 23619 | 0.93 | 0 |
+| 6 | 3 | 3.598 (3.587-3.649) | 7.330 (5.697-8.128) | 23612 | 25318 | 0.93 | 0 |
+| 7 | 3 | 3.595 (3.588-3.615) | 7.600 (7.124-7.663) | - | 26950 | - | 0 |
+| 8 | 3 | 3.817 (3.793-3.843) | 6.945 (6.544-7.998) | 26997 | 28714 | 0.94 | 0 |
+| 9 | 3 | 3.701 (3.686-3.789) | 7.792 (7.650-8.010) | - | 30367 | - | 0 |
+| 10 | 3 | 3.826 (3.764-3.880) | 7.631 (7.531-7.955) | - | 32060 | - | 0 |
+| 11 | 3 | 4.006 (3.967-4.026) | 7.698 (6.342-7.892) | 32107 | 33823 | 0.95 | 0 |
+| 12 | 3 | 5.007 (4.067-5.779) | 5.780 (5.008-8.308) | 33816 | 35535 | 0.95 | 0 |
+| 13 | 3 | 3.964 (3.958-4.078) | 7.908 (6.752-8.032) | 35528 | 37191 | 0.95 | 0 |
+| 14 | 3 | 4.190 (4.116-4.257) | 6.584 (6.429-7.650) | 37238 | 38960 | 0.96 | 0 |
+| 15 | 3 | 4.048 (4.008-4.148) | 8.217 (7.913-8.314) | 38953 | 40612 | 0.96 | 0 |
+| 16 | 3 | 4.180 (4.066-5.475) | 5.986 (5.476-7.555) | 40659 | 42359 | 0.96 | 0 |
+| 17 | 3 | 4.405 (4.295-4.461) | 7.601 (7.346-8.042) | 42352 | 44063 | 0.96 | 0 |
+| 18 | 3 | 4.316 (4.153-4.383) | 8.548 (7.480-8.592) | 44056 | 45696 | 0.96 | 0 |
+| 19 | 3 | 4.464 (4.327-4.591) | 8.626 (8.528-8.655) | - | 47383 | - | 0 |
+| 20 | 3 | 4.436 (4.276-4.545) | 8.384 (6.281-9.077) | 47430 | 49151 | 0.96 | 0 |
+
+TTFT slope over steps 1-20: -0.1227 s/step (steps 2-20: 0.0575 s/step); total e2e per run: 169.5, 181.9, 181.9 s.
+
+30 of 63 requests ended at the token cap inside a tool call, and the server flagged it as an `incomplete_tool_call` stream error. They count as latency samples. They have no usage chunk, so they report no cached tokens.
+
+### M7 tool-call correctness
+
+Source: `raw/m7-oq5mtp-mtp-on-t1-prec-20261022-013652.jsonl`.
+
+Passed 107/120.
+
+| Case | Category | Result | Reasons |
+| --- | --- | --- | --- |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | **FAIL** | no tool call |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | pass | - |
+| m7-01-single | single call | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-02-multi-args | multiple args | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-03-nested-object | nested objects | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-04-array-of-objects | nested objects (array of objects, multi-turn) | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-05-array-strings | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-06-array-integers | arrays | pass | - |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange'; spurious extra call(s): expected 1, got 2 |
+| m7-07-enum | enums | **FAIL** | called 'window_list' instead of 'window_arrange' |
+| m7-07-enum | enums | pass | - |
+| m7-07-enum | enums | pass | - |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-08-key-combo | enums / arrays | pass | - |
+| m7-08-key-combo | enums / arrays | **FAIL** | spurious extra call(s): expected 1, got 2 |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-09-numbers | numbers | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-10-float-bool | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | **FAIL** | called 'fs_search_files' instead of 'fs_write_file' |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-11-booleans | numbers and booleans | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-12-chinese-args | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-13-chinese-instruction | Unicode / Chinese args | **FAIL** | called 'app_launch' instead of 'shell_run' |
+| m7-13-chinese-instruction | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | **FAIL** | called 'computer_screenshot' instead of 'computer_type_text' |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-14-unicode-text | Unicode / Chinese args | **FAIL** | called 'computer_screenshot' instead of 'computer_type_text' |
+| m7-14-unicode-text | Unicode / Chinese args | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-15-quotes-newlines | quotes and newlines in strings | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-16-commit-message | quotes and newlines in strings (multi-turn) | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-17-long-string | long string args | pass | - |
+| m7-17-long-string | long string args | **FAIL** | called 'fs_read_file' instead of 'fs_write_file' |
+| m7-17-long-string | long string args | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-18-parallel | two parallel calls | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-19-similar-tools-glob | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-20-similar-tools-http | choosing between similar tools | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-21-no-call | no call needed | pass | - |
+| m7-22-image-read | call after an image | **FAIL** | fs_read_file.path: expected 'data/dal-pribr-y-55.csv' to end with 'dal-pribry-55.csv' |
+| m7-22-image-read | call after an image | **FAIL** | fs_read_file.path: expected 'data/dal-priby-55.csv' to end with 'dal-pribry-55.csv' |
+| m7-22-image-read | call after an image | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-22-image-read | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | pass | - |
+| m7-23-image-click | call after an image | **FAIL** | spurious extra call(s): expected 1, got 2 |
+| m7-23-image-click | call after an image | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+| m7-24-calendar | nested objects | pass | - |
+<!-- agentbench:end summary oq5mtp-mtp-on-t1-prec -->
