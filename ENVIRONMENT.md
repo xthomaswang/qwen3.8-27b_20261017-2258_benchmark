@@ -42,5 +42,5 @@ this repo. `scripts/download_models.sh` fetches them.
 
 As of 2026-10-22 none of these are kept locally. The 2026-10-21 cleanup removed the GGUF,
 NVFP4, DSpark and 4-bit repos; BF16 and the 8-bit repo followed on 2026-10-22. What remains
-are this repo's oQ5 and oQ8 conversions in `~/Developer/mlsys/models/oq`
-([PRECISION.md](PRECISION.md)). The harness reads its tokenizer from the oQ5 one.
+is this repo's oQ5 conversion in `~/Developer/mlsys/models/oq` ([PRECISION.md](PRECISION.md));
+the oQ8 one was deleted on 2026-10-22 too. The harness reads its tokenizer from the oQ5 one.
