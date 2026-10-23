@@ -1,9 +1,41 @@
 # Resume — current progress
 
-Updated: 2026-10-22 14:01 (local). Rewrite this after every major phase, and read it first
+Updated: 2026-10-23 08:46 (local). Rewrite this after every major phase, and read it first
 when resuming.
 
-## Current state (2026-10-22 14:01): the user chose oQ5; checkpoints trimmed
+## Current state (2026-10-23 08:46): oQ5 is the only checkpoint; Flint not adopted
+
+- **PR #13 merged on 2026-10-22** (c15a0a8). The agent benchmark runs on oQ5.
+- **The last oQ8 copy was deleted** at the user's direction on 2026-10-22 (28 GB).
+  - `models/oq/Qwen3.8-27B-oQ5-mtp` (19 GB) is the only Qwen3.8-27B checkpoint left.
+  - Re-running another level, or the token-level comparison, needs the BF16 download
+    (55.6 GB) and a fresh conversion.
+  - Stock `mlx_lm` needs 0.32.0 or later to load an oQ checkpoint: 0.31.3's `qwen3_5`
+    sanitize shifts the already-shifted norms a second time when MTP weights are present.
+- **Recursive Flint (rec 0.1.0, flint-int4): tested further on 2026-10-22, not adopted.**
+  - Seeded M7 x 5 here, plus the agent benchmark's Aider runs (Hermes and localmelo, 12
+    exercises each). The files stay in the gitignored `flint/raw/_unverified/`, with the
+    per-case table `m7-table-20261022.txt`. Other sessions' CPU work was running, and
+    Flint's thinking cannot be turned off, so there is no like-for-like row.
+  - Verdict, as reported to the user: it passed fewer M7 cases and Aider exercises than
+    oQ5 and was slower end to end, because forced thinking and extra calls cost more than
+    its faster decode saves. It does not replace oQ5 as an agent backend.
+  - Worth knowing before running it again:
+    - Without a `seed` field it samples with a fixed default seed, so the same prompt
+      gives the same output even at temperature 1. Send a seed per request.
+    - A tool call with a nested-object argument can hang the engine, and then the whole
+      HTTP server stops answering until `rec stop`.
+    - It returns 400 when an assistant message carries both `reasoning_content` and
+      `reasoning`.
+  - Still installed (22.6 GB under `~/Developer/ml_source/rec`). The other sessions need
+    it for the reasoning-memory A/B in November (weeks of 11/2 and 11/9). Don't
+    uninstall it without the user's word.
+- **GPU lock:** the agent benchmark holds it from 06:20 to about 11:00 on 2026-10-23 for
+  E1, a localmelo A/B on oQ5 (oMLX 8500, proxy 8651). This session has nothing queued.
+  Give localmelo_main 10 minutes' notice before taking the lock.
+- **Pending (user):** whether to keep Flint after the November A/B.
+
+## Previous state (2026-10-22 14:01): the user chose oQ5; checkpoints trimmed
 
 - **The user chose oQ5.** They approved merging PR #13 once its "keeps oQ8" lines said so;
   this update does that in PRECISION.md, the README and here.
